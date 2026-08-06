@@ -3,7 +3,7 @@ Description=NotifySound daemon
 After=graphical-session.target
 
 [Service]
-ExecStart=%h/.local/bin/notify-sound --daemon
+ExecStart="%h/.local/bin/notify-sound" --daemon
 Restart=on-failure
 
 [Install]

@@ -26,20 +26,20 @@ It also ships a simple GTK4 app to configure everything.
 
 - Python 3.10+
 - PyGObject (`python3-gi`)
-- `canberra-gtk-play` (`libcanberra-gtk-module` / `libcanberra0`)
-- GTK 4 (for the GUI only)
+- `canberra-gtk-play` (`gnome-session-canberra`)
+- GTK 4.10+ (for the GUI only)
 - `dbus-monitor` (part of the `dbus` package, present on every desktop)
 
 Install on Ubuntu/Debian:
 
 ```sh
-sudo apt install python3-gi libcanberra-gtk-module libcanberra0 dbus
+sudo apt install python3-gi gir1.2-gtk-4.0 gnome-session-canberra dbus
 ```
 
 ## Install
 
 ```sh
-git clone https://github.com/yourname/notify-sound.git
+git clone https://github.com/ChristianM023/notify-sound.git
 cd notify-sound
 ./install.sh
 ```
@@ -51,9 +51,12 @@ This installs to `~/.local/bin`, adds a launcher and enables autostart
 
 ```sh
 mkdir -p ~/.config/systemd/user
-cp share/notify-sound.service ~/.config/systemd/user/
+cp ~/.local/share/notify-sound/notify-sound.service ~/.config/systemd/user/
 systemctl --user enable --now notify-sound
 ```
+
+For a custom `PREFIX`, copy the generated unit from
+`$PREFIX/share/notify-sound/notify-sound.service` instead.
 
 ## Usage
 
@@ -121,8 +124,10 @@ a new notification.
   least one of them, e.g. `sudo apt install gstreamer1.0-plugins-base gstreamer1.0-plugins-good`.
 - **Notifications with their own sound are played twice:** enable
   "no_duplicate" in the GUI (disabled means both sounds play on purpose).
-- **Sound plays only after the notification closes:** not a NotifySound issue;
-  report it with details on your shell and notification server.
+- **Sound plays only after the next notification:** update to 0.1.1 or later;
+  NotifySound processes each D-Bus message immediately. If the player starts
+  immediately but audio is delayed, report it with details on your shell and
+  notification server.
 
 ## Why does this exist?
 
