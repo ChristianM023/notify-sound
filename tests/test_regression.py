@@ -590,5 +590,30 @@ class ProcessRegressionTests(unittest.TestCase):
             self.assertFalse(autostart.exists())
 
 
+class GuiTests(unittest.TestCase):
+    def test_activation_reuses_one_window_and_holds_once(self):
+        from notify_sound import gui
+
+        app = gui.NotifyApplication()
+        window = mock.Mock()
+        with mock.patch.object(gui, "NotifyWindow", return_value=window) as new_window:
+            with mock.patch.object(app, "hold") as hold:
+                app.do_activate()
+                app.do_activate()
+
+        new_window.assert_called_once_with(app)
+        self.assertEqual(window.present.call_count, 2)
+        hold.assert_called_once_with()
+
+    def test_close_clears_window_reference(self):
+        from notify_sound import gui
+
+        app = gui.NotifyApplication()
+        window = mock.Mock()
+        app.window = window
+        self.assertFalse(app._on_window_close(window))
+        self.assertIsNone(app.window)
+
+
 if __name__ == "__main__":
     unittest.main()

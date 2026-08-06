@@ -5,7 +5,7 @@ import sys
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import GLib, Gio, Gtk
+from gi.repository import GLib, Gtk
 
 from . import config, player, sounds
 
@@ -361,15 +361,23 @@ class NotifyWindow(Gtk.ApplicationWindow):
 
 class NotifyApplication(Gtk.Application):
     def __init__(self):
-        super().__init__(
-            application_id="dev.notifysound.NotifySound",
-            flags=Gio.ApplicationFlags.NON_UNIQUE,
-        )
+        super().__init__(application_id="dev.notifysound.NotifySound")
+        self.window = None
+        self._held = False
 
     def do_activate(self):
-        window = NotifyWindow(self)
-        window.present()
-        self.hold()
+        if self.window is None:
+            self.window = NotifyWindow(self)
+            self.window.connect("close-request", self._on_window_close)
+        if not self._held:
+            self.hold()
+            self._held = True
+        self.window.present()
+
+    def _on_window_close(self, window):
+        if self.window is window:
+            self.window = None
+        return False
 
 
 def main_gui():
