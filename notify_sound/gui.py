@@ -377,6 +377,9 @@ class NotifyApplication(Gtk.Application):
     def _on_window_close(self, window):
         if self.window is window:
             self.window = None
+            if self._held:
+                self.release()
+                self._held = False
         return False
 
 

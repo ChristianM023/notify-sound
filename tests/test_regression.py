@@ -611,7 +611,11 @@ class GuiTests(unittest.TestCase):
         app = gui.NotifyApplication()
         window = mock.Mock()
         app.window = window
-        self.assertFalse(app._on_window_close(window))
+        app._held = True
+        with mock.patch.object(app, "release") as release:
+            self.assertFalse(app._on_window_close(window))
+        release.assert_called_once_with()
+        self.assertFalse(app._held)
         self.assertIsNone(app.window)
 
 
