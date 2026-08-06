@@ -72,19 +72,25 @@ class NotifyDaemon:
         if monitor is None:
             return
         try:
-            if monitor.stdout:
-                monitor.stdout.close()
-        except (AttributeError, OSError, ValueError):
-            pass
-        try:
             if monitor.poll() is None:
                 monitor.terminate()
             monitor.wait(timeout=1)
-        except (AttributeError, OSError, subprocess.TimeoutExpired):
+        except subprocess.TimeoutExpired:
             try:
                 monitor.kill()
             except (AttributeError, OSError):
                 pass
+            try:
+                monitor.wait(timeout=1)
+            except (AttributeError, OSError, subprocess.TimeoutExpired):
+                pass
+        except (AttributeError, OSError):
+            pass
+        try:
+            if monitor.stdout:
+                monitor.stdout.close()
+        except (AttributeError, OSError, ValueError):
+            pass
 
     def _schedule_monitor_restart(self):
         if self.stopping or not self.accept_restarts:

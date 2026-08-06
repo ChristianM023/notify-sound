@@ -583,6 +583,27 @@ class ProcessRegressionTests(unittest.TestCase):
             finally:
                 self.stop_daemon(process)
 
+    def test_daemon_stops_cleanly_after_sigterm(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            fake_bin = root / "bin"
+            self.write_monitor(fake_bin)
+            env = self.environment(root, fake_bin)
+            env["MONITOR_LOG"] = str(root / "monitor.log")
+            process = self.start_daemon(env)
+            try:
+                self.assertTrue(
+                    self.wait_for(Path(env["MONITOR_LOG"]).exists)
+                )
+                process.terminate()
+                process.wait(timeout=3)
+                self.assertEqual(process.returncode, 0)
+            finally:
+                if process.poll() is None:
+                    self.stop_daemon(process)
+                else:
+                    process.communicate(timeout=1)
+
     def test_custom_prefix_generates_matching_autostart_and_service(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
