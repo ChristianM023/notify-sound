@@ -21,6 +21,7 @@ _STRING_RE = re.compile(r'^\s+string "([^"]*)"', re.MULTILINE)
 _MESSAGE_HEADER_RE = re.compile(
     r"^(?:method call|signal|method return|error)\b"
 )
+_TOP_LEVEL_INT32_RE = re.compile(r"^ {3}int32[ \t]+[-+]?\d+[ \t]*$")
 _RETRY_INITIAL_MS = 1000
 _RETRY_MAX_MS = 30000
 _MONITOR_STABLE_SECONDS = 5
@@ -127,10 +128,11 @@ class NotifyDaemon:
                     buffer = [text] if is_notify else None
                     continue
                 if buffer is not None:
-                    buffer.append(text)
-                    if not text.strip():
+                    if _TOP_LEVEL_INT32_RE.match(text):
                         self._process_block(buffer)
                         buffer = None
+                    else:
+                        buffer.append(text)
             if buffer is not None:
                 self._process_block(buffer)
         except (OSError, ValueError) as exc:
@@ -174,6 +176,8 @@ class NotifyDaemon:
                 config.save_state({"apps_seen": merged})
 
     def _maybe_play(self, app_name, hints):
+        if "suppress-sound" in hints:
+            return
         cfg = config.load_config()
         if not cfg.get("enabled", True):
             return

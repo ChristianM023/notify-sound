@@ -16,7 +16,7 @@ from notify_sound import config, daemon, player
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def notification(app_name, hints=(), trailing_blank=True):
+def notification(app_name, hints=(), trailing_blank=True, body="Body"):
     hint_lines = "".join(
         "      dict entry(\n"
         f'         string "{hint}"\n'
@@ -34,7 +34,7 @@ def notification(app_name, hints=(), trailing_blank=True):
             "   uint32 0\n",
             '   string ""\n',
             '   string "Summary"\n',
-            '   string "Body"\n',
+            f'   string "{body}"\n',
             "   array [\n",
             "   ]\n",
             "   array [\n",
@@ -249,6 +249,32 @@ class DaemonTests(ConfigTests):
         with mock.patch.object(player, "play_choice") as play:
             instance._reader(monitor)
         play.assert_called_once_with("message")
+
+    def test_multiline_body_processes_once_and_skips_shell_reemission(self):
+        body = "web.whatsapp.com\n\nV"
+        payload = notification("Vivaldi", body=body) + notification(
+            "Vivaldi",
+            hints=("x-shell-sender",),
+            body=body,
+            trailing_blank=False,
+        )
+        instance, monitor = self.make_daemon(payload)
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("message")
+
+    def test_suppress_sound_is_always_silent(self):
+        self.write_config({"no_duplicate": False})
+        instance, monitor = self.make_daemon(
+            notification(
+                "Vivaldi",
+                hints=("suppress-sound",),
+                trailing_blank=False,
+            )
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_not_called()
 
     def test_registered_app_sound_overrides_global_sound(self):
         app_sound = "/tmp/notify-sound-test-I-Feel-Good.wav"
