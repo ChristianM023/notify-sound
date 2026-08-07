@@ -163,7 +163,7 @@ notify-sound --quit     # stop the daemon</code></pre>
     document.documentElement.lang = lang;
     var nodes = document.querySelectorAll("[data-en]");
     for (var i = 0; i < nodes.length; i++) {
-      nodes[i].textContent = nodes[i].getAttribute("data-" + lang);
+      nodes[i].innerHTML = nodes[i].getAttribute("data-" + lang);
     }
     document.getElementById("langToggle").textContent = lang === "en" ? "ES" : "EN";
   }
