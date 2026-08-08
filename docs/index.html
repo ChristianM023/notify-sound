@@ -56,7 +56,7 @@
     <div class="features">
       <div class="feature">
         <h3 data-en="Play sound for any silent notification" data-es="Sonido para cualquier notificación silenciosa">Play sound for any silent notification</h3>
-        <p data-en="The daemon watches the notification bus and plays your chosen sound when an app sends a notification without one." data-es="El daemon observa el bus de notificaciones y reproduce tu sonido elegido cuando una app envía una notificación sin uno.">The daemon watches the notification bus and plays your chosen sound when an app sends a notification without one.</p>
+        <p data-en="The daemon watches GNOME, GTK and freedesktop notification paths and plays your chosen sound when an app sends a notification without one." data-es="El daemon observa las rutas de notificaciones de GNOME, GTK y freedesktop, y reproduce tu sonido cuando una app envía una notificación sin uno.">The daemon watches GNOME, GTK and freedesktop notification paths and plays your chosen sound when an app sends a notification without one.</p>
       </div>
       <div class="feature">
         <h3 data-en="No double sounds" data-es="Sin sonidos duplicados">No double sounds</h3>
@@ -68,15 +68,15 @@
       </div>
       <div class="feature">
         <h3 data-en="Custom sound files" data-es="Archivos de sonido propios">Custom sound files</h3>
-        <p data-en="Add your own OGG/WAV/FLAC (and MP3 with GStreamer/ffplay)." data-es="Añade tus propios OGG/WAV/FLAC (y MP3 con GStreamer/ffplay).">Add your own OGG/WAV/FLAC (and MP3 with GStreamer/ffplay).</p>
+        <p data-en="Add your own OGG/WAV/FLAC (and MP3/M4A/AAC with GStreamer, ffplay, mpv or mpg123)." data-es="Añade tus propios OGG/WAV/FLAC (y MP3/M4A/AAC con GStreamer, ffplay, mpv o mpg123).">Add your own OGG/WAV/FLAC (and MP3/M4A/AAC with GStreamer, ffplay, mpv or mpg123).</p>
       </div>
       <div class="feature">
         <h3 data-en="Simple GTK4 settings app" data-es="App de ajustes GTK4 sencilla">Simple GTK4 settings app</h3>
         <p data-en="Choose sounds, test them, manage apps and daemon state from one window." data-es="Elige sonidos, pruébalos, gestiona apps y el estado del daemon desde una ventana.">Choose sounds, test them, manage apps and daemon state from one window.</p>
       </div>
       <div class="feature">
-        <h3 data-en="No sudo required" data-es="Sin necesidad de sudo">No sudo required</h3>
-        <p data-en="Installs per-user; autostart with your session is one click away." data-es="Instala por usuario; el inicio automático con la sesión está a un clic.">Installs per-user; autostart with your session is one click away.</p>
+        <h3 data-en="Per-user install" data-es="Instalación por usuario">Per-user install</h3>
+        <p data-en="The source installer needs no sudo; Ubuntu/Debian users can also use the release package." data-es="El instalador desde fuente no necesita sudo; en Ubuntu/Debian también puedes usar el paquete de la release.">The source installer needs no sudo; Ubuntu/Debian users can also use the release package.</p>
       </div>
     </div>
   </div>
@@ -101,6 +101,14 @@
 <section id="install">
   <div class="container">
     <h2><span>04</span><span data-en="Install" data-es="Instalación">Install</span></h2>
+    <p data-en="Ubuntu / Debian package (recommended):" data-es="Paquete para Ubuntu / Debian (recomendado):">Ubuntu / Debian package (recommended):</p>
+    <div class="install-actions">
+      <a class="btn primary small" href="https://github.com/ChristianM023/notify-sound/releases/download/v0.1.6/notify-sound_0.1.6_all.deb" target="_blank" rel="noopener" data-en="Download .deb" data-es="Descargar .deb">Download .deb</a>
+      <a class="btn secondary small" href="https://github.com/ChristianM023/notify-sound/releases/download/v0.1.6/notify-sound_0.1.6_all.deb.sha256" target="_blank" rel="noopener" data-en="SHA-256 checksum" data-es="Checksum SHA-256">SHA-256 checksum</a>
+    </div>
+    <pre><code>sudo dpkg -i ./notify-sound_0.1.6_all.deb
+sudo apt-get -f install</code></pre>
+    <p data-en="Or install per-user from source (no sudo):" data-es="O instala por usuario desde fuente (sin sudo):">Or install per-user from source (no sudo):</p>
     <p data-en="Ubuntu / Debian dependencies:" data-es="Dependencias de Ubuntu / Debian:">Ubuntu / Debian dependencies:</p>
     <pre><code>sudo apt install python3-gi gir1.2-gtk-4.0 gnome-session-canberra dbus</code></pre>
     <p data-en="Then clone and install (no sudo needed):" data-es="Luego clona e instala (sin necesidad de sudo):">Then clone and install (no sudo needed):</p>
