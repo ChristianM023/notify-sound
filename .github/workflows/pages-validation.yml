@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Validate landing assets and translations
@@ -28,7 +28,9 @@ jobs:
           python3 - <<'PY'
           from html.parser import HTMLParser
           from pathlib import Path
+          from urllib.error import HTTPError
           from urllib.parse import urlparse
+          from urllib.request import Request, urlopen
 
           root = Path("docs")
           html = (root / "index.html").read_text(encoding="utf-8")
@@ -59,11 +61,33 @@ jobs:
                   continue
               if not (root / source.split("#", 1)[0]).is_file():
                   raise AssertionError(f"missing landing asset: {source}")
-          required = (
-              "https://github.com/ChristianM023/notify-sound/releases/download/"
-              "v0.1.7/notify-sound_0.1.7_all.deb"
-          )
-          if required not in checker.links:
-              raise AssertionError("current Debian release link is missing")
+          release_base = "https://github.com/ChristianM023/notify-sound/releases/download/"
+          release_links = [
+              link for link in checker.links if link.startswith(release_base)
+          ]
+          required = {
+              link for link in release_links
+              if link.endswith(".deb") or link.endswith(".deb.sha256")
+          }
+          if not any(link.endswith(".deb") for link in required):
+              raise AssertionError("Debian release link is missing")
+          if not any(link.endswith(".deb.sha256") for link in required):
+              raise AssertionError("Debian checksum link is missing")
+          for link in required:
+              request = Request(
+                  link,
+                  method="HEAD",
+                  headers={"User-Agent": "notify-sound-pages-validation"},
+              )
+              try:
+                  with urlopen(request, timeout=30) as response:
+                      if response.status != 200:
+                          raise AssertionError(
+                              f"unexpected HTTP status {response.status}: {link}"
+                          )
+              except HTTPError as error:
+                  raise AssertionError(
+                      f"release asset unavailable ({error.code}): {link}"
+                  ) from error
           print(f"Pages validation ok: {len(checker.assets)} assets, {len(checker.links)} links")
           PY
