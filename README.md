@@ -260,20 +260,26 @@ asserts on what would be played/skipped. Add a test for every new behavior.
 
 1. Bump `__version__` in `notify_sound/__init__.py`.
 2. Add a Changelog entry below and update versioned release links.
-3. Run the full test suite and build the Debian package twice with the same
-   `SOURCE_DATE_EPOCH`; the resulting `.deb` files must have identical SHA-256
-   hashes.
-4. Merge through a PR with the required `tests` and `pages-validation` checks.
-5. Create and push the matching `vX.Y.Z` tag, then publish the `.deb` and its
-   portable checksum as release assets.
-6. `./install.sh` to deploy, then restart the daemon
+3. Run the full test suite.
+4. `./install.sh` to deploy, then restart the daemon
    (`notify-sound --quit && notify-sound --daemon`).
-7. Verify the release asset checksum and the successful GitHub Pages deployment.
+5. Merge through a PR with the required `tests` check.
+6. Build the Debian package and its checksum:
+
+   ```sh
+   ./build-deb.sh
+   sha256sum dist/notify-sound_X.Y.Z_all.deb \
+     > dist/notify-sound_X.Y.Z_all.deb.sha256
+   ```
+
+7. Create and push the matching `vX.Y.Z` tag, create a draft GitHub release,
+   upload the `.deb` and checksum, then publish the release.
+8. Verify the release checksum and the successful GitHub Pages deployment.
 
 ## Changelog
 
-- **0.1.7** — reproducible Debian builds and checksums, required Pages
-  validation, FLAC theme sounds, and a complete release checklist.
+- **0.1.7** — Debian package and checksum improvements, FLAC theme sounds,
+  and a complete release checklist.
 - **0.1.6** — security hardening: quote-aware bounded notification parsing,
   GTK notification support (including Ptyxis), private atomic config/state
   writes, bounded playback and decoder timeouts, safe sound/path validation,
