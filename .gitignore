@@ -8,3 +8,4 @@ __pycache__/
 config.json
 state.json
 dist/
+AGENTS.md
