@@ -35,7 +35,13 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: python3 -m unittest discover -s tests -v
-      - name: Build Debian package
-        run: ./build-deb.sh
-      - name: Inspect Debian package
-        run: dpkg-deb --info dist/notify-sound_*_all.deb
+      - name: Build Debian package reproducibly
+        run: |
+          epoch="$(git log -1 --format=%ct HEAD)"
+          rm -rf dist/repro-a dist/repro-b
+          SOURCE_DATE_EPOCH="$epoch" OUT_DIR=dist/repro-a ./build-deb.sh
+          SOURCE_DATE_EPOCH="$epoch" OUT_DIR=dist/repro-b ./build-deb.sh
+          package="$(find dist/repro-a -maxdepth 1 -name 'notify-sound_*_all.deb' -type f -print -quit)"
+          other="dist/repro-b/$(basename "$package")"
+          cmp "$package" "$other"
+          dpkg-deb --info "$package"

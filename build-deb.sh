@@ -15,6 +15,20 @@ if ! command -v dpkg-deb >/dev/null 2>&1; then
   exit 2
 fi
 
+SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-}"
+if [[ -z "$SOURCE_DATE_EPOCH" ]]; then
+  if git -C "$SRC" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    SOURCE_DATE_EPOCH="$(git -C "$SRC" log -1 --format=%ct HEAD)"
+  else
+    SOURCE_DATE_EPOCH="$(date +%s)"
+  fi
+fi
+if [[ ! "$SOURCE_DATE_EPOCH" =~ ^[0-9]+$ ]]; then
+  printf '%s\n' "SOURCE_DATE_EPOCH debe ser un timestamp Unix." >&2
+  exit 2
+fi
+export SOURCE_DATE_EPOCH
+
 VERSION="$("$PYTHON" -c '
 import re
 import sys
@@ -105,6 +119,8 @@ Description: sounds for desktop notifications without one
  custom sound files and a user-level systemd service template.
 EOF
 
+# Normalize metadata so two builds from the same commit produce the same data archive.
+find "$PKGROOT" -exec touch --no-dereference --date="@$SOURCE_DATE_EPOCH" {} +
 install -d -m 755 "$OUT_DIR"
 rm -f "$OUTPUT"
 dpkg-deb --build --root-owner-group "$PKGROOT" "$OUTPUT" >/dev/null
