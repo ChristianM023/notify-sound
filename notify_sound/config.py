@@ -294,7 +294,8 @@ def acquire_instance_lock():
     _ensure_private_directory(os.path.dirname(PID_FILE) or ".")
     flags = os.O_RDWR | os.O_CREAT
     flags |= getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(PID_FILE, flags, 0o600)
+    lock_file = PID_FILE + ".lock"
+    fd = os.open(lock_file, flags, 0o600)
     handle = None
     try:
         os.fchmod(fd, 0o600)
@@ -316,11 +317,7 @@ def acquire_instance_lock():
 
 
 def write_pid(handle, pid):
-    handle.seek(0)
-    handle.truncate()
-    handle.write(str(pid))
-    handle.flush()
-    os.fsync(handle.fileno())
+    _atomic_write(PID_FILE, str(pid))
 
 
 def remove_pid(pid=None):

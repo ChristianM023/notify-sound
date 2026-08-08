@@ -383,9 +383,9 @@ def main_daemon():
         signal.signal(signal.SIGINT, daemon.on_signal)
         daemon.run()
     finally:
-        lock.close()
         if pid_written:
             config.remove_pid(os.getpid())
+        lock.close()
     return 0
 
 

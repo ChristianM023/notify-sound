@@ -224,8 +224,9 @@ asserts on what would be played/skipped. Add a test for every new behavior.
 ### Daemon lifecycle
 
 - Single instance: `config.acquire_instance_lock()` takes an `flock` on the
-  pidfile (`$XDG_RUNTIME_DIR/notify-sound.pid`, per-user fallback in
-  `~/.cache/notify-sound/`), opened with `O_NOFOLLOW` and mode 0600.
+  permanent lock file (`$XDG_RUNTIME_DIR/notify-sound.pid.lock`, per-user
+  fallback in `~/.cache/notify-sound/`), opened with `O_NOFOLLOW` and mode
+  0600. The PID is written atomically to the adjacent `.pid` file.
 - `dbus-monitor` is restarted with exponential backoff (1s → 30s) if it exits;
   the backoff resets after 5s of stability. If the binary is missing the
   daemon retries in the background instead of dying. It observes both
