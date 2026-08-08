@@ -7,3 +7,4 @@ __pycache__/
 *.p12
 config.json
 state.json
+dist/

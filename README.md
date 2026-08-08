@@ -64,6 +64,26 @@ A custom `PREFIX=/some/path ./install.sh` installs elsewhere; the wrapper
 exports `NOTIFY_SOUND_BIN` so autostart and the GUI always use the right
 binary.
 
+### Debian package
+
+Ubuntu/Debian users can install the release package without cloning the
+repository:
+
+```sh
+sudo dpkg -i ./notify-sound_0.1.6_all.deb
+sudo apt-get -f install
+notify-sound
+```
+
+The package installs the program under `/usr`, does not enable a daemon
+automatically, and includes a user-level systemd unit template:
+
+```sh
+mkdir -p ~/.config/systemd/user
+cp /usr/share/notify-sound/notify-sound.service ~/.config/systemd/user/
+systemctl --user enable --now notify-sound
+```
+
 ### systemd (alternative to autostart)
 
 ```sh
@@ -186,6 +206,7 @@ notify_sound/
 tests/test_regression.py  # unittest regression suite
 share/notify-sound.service   # systemd unit template
 install.sh                # per-user installer (PREFIX-aware)
+build-deb.sh              # Debian package builder
 ```
 
 ### Running the tests
