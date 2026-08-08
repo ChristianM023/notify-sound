@@ -126,6 +126,10 @@ code { font-family: var(--mono); }
   border-radius: var(--radius); padding: 16px;
 }
 .donate-card .coin { font-family: var(--mono); font-weight: bold; color: var(--accent); }
+.donate-card .qr {
+  display: block; width: 150px; height: 150px; margin: 12px auto;
+  background: #fff; border-radius: 4px; image-rendering: pixelated;
+}
 .donate-card .addr {
   font-family: var(--mono); font-size: 0.78rem; color: var(--fg-dim);
   word-break: break-all; margin: 8px 0; background: var(--bg);
