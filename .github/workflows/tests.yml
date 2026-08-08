@@ -1,0 +1,41 @@
+name: Test project
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            dbus \
+            gir1.2-gtk-4.0 \
+            gnome-session-canberra \
+            python3-gi
+      - name: Run regression suite
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 -m unittest discover -s tests -v
+      - name: Build Debian package
+        run: ./build-deb.sh
+      - name: Inspect Debian package
+        run: dpkg-deb --info dist/notify-sound_*_all.deb
