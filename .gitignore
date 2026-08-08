@@ -1,2 +1,9 @@
 __pycache__/
 *.pyc
+.env
+.env.*
+*.pem
+*.key
+*.p12
+config.json
+state.json

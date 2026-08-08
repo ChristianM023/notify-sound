@@ -159,11 +159,48 @@ notify-sound --quit     # stop the daemon</code></pre>
   try { saved = localStorage.getItem(KEY); } catch (e) {}
   var lang = saved === "es" ? "es" : "en";
 
+  function appendSafe(parent, source) {
+    for (var i = 0; i < source.childNodes.length; i++) {
+      var child = source.childNodes[i];
+      if (child.nodeType === 3) {
+        parent.appendChild(document.createTextNode(child.nodeValue));
+        continue;
+      }
+      if (child.nodeType !== 1) continue;
+      var tag = child.tagName.toLowerCase();
+      var target = null;
+      if (tag === "strong" || tag === "code") {
+        target = document.createElement(tag);
+      } else if (tag === "a") {
+        var href = child.getAttribute("href") || "";
+        if (!/^https:\/\/github\.com\/ChristianM023\/notify-sound(?:\/|$)/.test(href)) {
+          appendSafe(parent, child);
+          continue;
+        }
+        target = document.createElement("a");
+        target.href = href;
+        target.target = "_blank";
+        target.rel = "noopener";
+      } else {
+        appendSafe(parent, child);
+        continue;
+      }
+      appendSafe(target, child);
+      parent.appendChild(target);
+    }
+  }
+
+  function setSafeTranslation(node, value) {
+    var parsed = new DOMParser().parseFromString(value || "", "text/html");
+    node.textContent = "";
+    appendSafe(node, parsed.body);
+  }
+
   function apply() {
     document.documentElement.lang = lang;
     var nodes = document.querySelectorAll("[data-en]");
     for (var i = 0; i < nodes.length; i++) {
-      nodes[i].innerHTML = nodes[i].getAttribute("data-" + lang);
+      setSafeTranslation(nodes[i], nodes[i].getAttribute("data-" + lang));
     }
     document.getElementById("langToggle").textContent = lang === "en" ? "ES" : "EN";
   }

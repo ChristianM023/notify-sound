@@ -46,6 +46,40 @@ def notification(app_name, hints=(), trailing_blank=True, body="Body"):
     return (payload + ("\n" if trailing_blank else "")).encode()
 
 
+def gtk_notification(
+    app_id="org.gnome.Ptyxis",
+    hints=(),
+    trailing_blank=True,
+    title="Comando completado",
+    body="sleep 5",
+):
+    entries = [
+        ("title", title),
+        ("body", body),
+    ] + [(hint, "message") for hint in hints]
+    notification_entries = "".join(
+        "      dict entry(\n"
+        f'         string "{key}"\n'
+        f'         variant string "{value}"\n'
+        "      )\n"
+        for key, value in entries
+    )
+    payload = "".join(
+        [
+            "method call time=1 sender=:1.1 -> "
+            "destination=org.gtk.Notifications serial=1 "
+            "path=/org/gtk/Notifications; "
+            "interface=org.gtk.Notifications; member=AddNotification\n",
+            f'   string "{app_id}"\n',
+            '   string "notification-id"\n',
+            "   array [\n",
+            notification_entries,
+            "   ]\n",
+        ]
+    )
+    return (payload + ("\n" if trailing_blank else "")).encode()
+
+
 class FakeLoop:
     def __init__(self, running=False):
         self.running = running
@@ -182,6 +216,42 @@ class ConfigTests(unittest.TestCase):
         Path(config.STATE_FILE).write_text(json.dumps(state), encoding="utf-8")
         self.assertEqual(config.load_state(), state)
 
+    def test_json_files_are_private_and_state_is_bounded(self):
+        config.save_config(config.DEFAULT_CONFIG)
+        config.save_state(
+            {
+                "apps_seen": [
+                    f"app-{index}"
+                    for index in range(config.MAX_STATE_APPS + 10)
+                ]
+            }
+        )
+        self.assertEqual(config.CONFIG_FILE, str(self.config_dir / "config.json"))
+        self.assertEqual(
+            Path(config.CONFIG_FILE).stat().st_mode & 0o777,
+            config.PRIVATE_FILE_MODE,
+        )
+        self.assertEqual(
+            Path(config.STATE_FILE).stat().st_mode & 0o777,
+            config.PRIVATE_FILE_MODE,
+        )
+        self.assertEqual(
+            self.config_dir.stat().st_mode & 0o777,
+            config.PRIVATE_DIR_MODE,
+        )
+        self.assertEqual(
+            len(config.load_state()["apps_seen"]), config.MAX_STATE_APPS
+        )
+
+    def test_autostart_rejects_control_characters_in_binary_path(self):
+        with mock.patch.dict(
+            os.environ,
+            {"NOTIFY_SOUND_BIN": "/tmp/notify-sound\nattacker"},
+            clear=False,
+        ):
+            with self.assertRaises(ValueError):
+                config.set_autostart(True)
+
     def test_autostart_uses_installed_binary_from_environment(self):
         with mock.patch.dict(
             os.environ,
@@ -263,6 +333,57 @@ class DaemonTests(ConfigTests):
             instance._reader(monitor)
         play.assert_called_once_with("message")
 
+    def test_string_content_cannot_fake_message_terminator(self):
+        instance, monitor = self.make_daemon(
+            notification(
+                "Vivaldi",
+                hints=("suppress-sound",),
+                body="before\n   int32 0\nmethod call fake",
+                trailing_blank=False,
+            )
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_not_called()
+
+    def test_incomplete_message_at_eof_is_discarded(self):
+        payload = notification("incomplete", trailing_blank=False)
+        payload = payload.rsplit(b"   int32 -1\n", 1)[0]
+        instance, monitor = self.make_daemon(payload)
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_not_called()
+
+    def test_gtk_notification_is_played_and_registered(self):
+        instance, monitor = self.make_daemon(
+            gtk_notification(trailing_blank=False)
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("message")
+        self.assertEqual(instance.seen, {"org.gnome.Ptyxis"})
+
+    def test_gtk_notification_respects_suppress_sound(self):
+        instance, monitor = self.make_daemon(
+            gtk_notification(
+                hints=("suppress-sound",), trailing_blank=False
+            )
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_not_called()
+
+    def test_gtk_string_content_cannot_fake_array_end(self):
+        instance, monitor = self.make_daemon(
+            gtk_notification(
+                body="before\n   ]\nmethod call fake",
+                trailing_blank=False,
+            )
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("message")
+
     def test_suppress_sound_is_always_silent(self):
         self.write_config({"no_duplicate": False})
         instance, monitor = self.make_daemon(
@@ -316,6 +437,13 @@ class DaemonTests(ConfigTests):
             self.assertTrue(player._play_fallback(commands))
         first.wait.assert_called_once_with()
         second.wait.assert_called_once_with()
+
+    def test_player_rejects_invalid_sound_ids_and_non_regular_files(self):
+        self.assertFalse(player.play_sound("../message"))
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp) / "sound.wav"
+            directory.mkdir()
+            self.assertFalse(player.play_file(str(directory)))
 
     def test_monitor_exit_uses_exponential_backoff(self):
         instance = daemon.NotifyDaemon()
@@ -481,6 +609,26 @@ class ProcessRegressionTests(unittest.TestCase):
             finally:
                 self.stop_daemon(process)
 
+    def test_gtk_notification_reaches_canberra_watcher(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            fake_bin = root / "bin"
+            self.write_monitor(fake_bin)
+            self.write_canberra(fake_bin)
+            env = self.environment(
+                root,
+                fake_bin,
+                gtk_notification("org.gnome.Ptyxis", trailing_blank=False),
+            )
+            process = self.start_daemon(env)
+            try:
+                log = Path(env["CANBERRA_LOG"])
+                self.assertTrue(self.wait_for(log.exists))
+                self.assertIn("-i message", log.read_text(encoding="utf-8"))
+                self.assertIsNone(process.poll())
+            finally:
+                self.stop_daemon(process)
+
     def test_notification_with_hint_does_not_reach_canberra(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -635,6 +783,24 @@ class ProcessRegressionTests(unittest.TestCase):
                 text=True,
             )
             self.assertFalse(autostart.exists())
+
+    def test_installer_rejects_unsafe_prefix(self):
+        with tempfile.TemporaryDirectory() as temp:
+            env = os.environ.copy()
+            env.update(
+                {
+                    "HOME": temp,
+                    "PREFIX": f"{temp}/bad\nExecStart=/tmp/attacker",
+                }
+            )
+            result = subprocess.run(
+                [str(ROOT / "install.sh")],
+                cwd=ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 2)
 
 
 class GuiTests(unittest.TestCase):

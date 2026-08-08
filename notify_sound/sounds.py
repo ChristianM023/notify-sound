@@ -1,8 +1,11 @@
 import glob
 import os
+import re
+import stat
 import subprocess
 
 AUDIO_EXTENSIONS = ("*.oga", "*.ogg", "*.wav")
+_THEME_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 
 
 def theme_name():
@@ -14,7 +17,7 @@ def theme_name():
             timeout=5,
         ).stdout.strip()
         name = out.strip("'\"").strip()
-        return name or "freedesktop"
+        return name if _THEME_NAME_RE.fullmatch(name) else "freedesktop"
     except (FileNotFoundError, subprocess.SubprocessError):
         return "freedesktop"
 
@@ -33,9 +36,19 @@ def list_sounds():
     themes = [theme_name(), "freedesktop"]
     for base in _sound_bases():
         for theme in themes:
-            stereo = os.path.join(base, theme, "stereo")
+            stereo = os.path.join(
+                glob.escape(base), glob.escape(theme), "stereo"
+            )
             for pattern in AUDIO_EXTENSIONS:
                 for path in sorted(glob.glob(os.path.join(stereo, pattern))):
+                    try:
+                        info = os.stat(path, follow_symlinks=False)
+                    except OSError:
+                        continue
+                    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(
+                        info.st_mode
+                    ):
+                        continue
                     sound_id = os.path.splitext(os.path.basename(path))[0]
                     sounds.setdefault(sound_id, path)
     return sounds

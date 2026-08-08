@@ -176,7 +176,7 @@ notify_sound/
 ├── config.py             # config/state/pidfile paths, autostart, JSON load/save
 │                         # (validates types, tolerates corrupt files, migrates
 │                         #  the pre-0.1.1 "custom_sound" key), instance lock
-├── daemon.py             # dbus-monitor subprocess, output parser, play rules,
+├── daemon.py             # dbus-monitor subprocesses, output parsers, play rules,
 │                         # backoff restarts, SIGTERM handling
 ├── player.py             # playback: canberra for OGG/WAV/FLAC, fallback chain
 │                         # (gst-launch-1.0 → ffplay → mpv → mpg123) for the rest
@@ -194,21 +194,26 @@ install.sh                # per-user installer (PREFIX-aware)
 python3 -m unittest discover -s tests -v
 ```
 
-The suite uses the `notification()` helper to build realistic dbus-monitor
-output (including multi-line bodies and hints) and asserts on what would be
-played/skipped. Add a test for every new behavior.
+The suite uses the `notification()` and `gtk_notification()` helpers to build
+realistic dbus-monitor output (including multi-line bodies and hints) and
+asserts on what would be played/skipped. Add a test for every new behavior.
 
 ### Parser contract (read before touching `daemon.py`)
 
-- The reader thread consumes dbus-monitor's stdout line by line. A message
-  starts at a line matching `_MESSAGE_HEADER_RE` and **ends at its top-level
-  `int32 <n>` line** (`_TOP_LEVEL_INT32_RE`: exactly 3 spaces + `int32`).
-  This is the Notify timeout argument — always the last argument, and the only
-  top-level `int32` in a Notify message.
+- The reader thread consumes dbus-monitor's stdout line by line. A standard
+  `Notify` message starts at a line matching `_MESSAGE_HEADER_RE` and **ends
+  at its top-level `int32 <n>` line** (`_TOP_LEVEL_INT32_RE`: exactly 3 spaces
+  + `int32`). This is the Notify timeout argument — always the last argument,
+  and the only top-level `int32` in a Notify message.
+- GTK applications such as Ptyxis use `org.gtk.Notifications.AddNotification`.
+  Those messages end at the closing bracket of their outer top-level `array`,
+  outside quoted strings. Incomplete or oversized messages are discarded.
 - Do **not** reintroduce blank-line or column-0 based message separation:
   string values with embedded newlines (`"a\n\nb"`) print as physical blank
   and unindented lines inside a message. This was the root cause of double
   playback for chat apps (v0.1.4).
+- Framing markers and message headers are recognized only outside quoted
+  strings, so notification content cannot imitate a terminator or header.
 - gnome-shell re-sends every notification with `x-shell-sender` +
   `x-shell-sender-pid` hints; those blocks must be skipped.
 - Playback rules, in order: master `enabled` off → nothing; `suppress-sound`
@@ -223,7 +228,9 @@ played/skipped. Add a test for every new behavior.
   `~/.cache/notify-sound/`), opened with `O_NOFOLLOW` and mode 0600.
 - `dbus-monitor` is restarted with exponential backoff (1s → 30s) if it exits;
   the backoff resets after 5s of stability. If the binary is missing the
-  daemon retries in the background instead of dying.
+  daemon retries in the background instead of dying. It observes both
+  `org.freedesktop.Notifications.Notify` and
+  `org.gtk.Notifications.AddNotification`.
 - `SIGTERM`/`SIGINT` stop the main loop, terminate the monitor and remove the
   pidfile. `--quit` sends `SIGTERM` to the pid in the pidfile.
 
@@ -238,6 +245,10 @@ played/skipped. Add a test for every new behavior.
 
 ## Changelog
 
+- **0.1.6** — security hardening: quote-aware bounded notification parsing,
+  GTK notification support (including Ptyxis), private atomic config/state
+  writes, bounded playback and decoder timeouts, safe sound/path validation,
+  hardened installer/autostart, and pinned Pages actions.
 - **0.1.5** — fix daemon shutdown: terminate/wait/kill ordering so `--quit`
   always stops the daemon and its `dbus-monitor` cleanly.
 - **0.1.4** — fix multiline parsing: message end detected via the top-level
