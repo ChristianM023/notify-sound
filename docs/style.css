@@ -76,6 +76,7 @@ header.hero {
 .btn.primary:hover { filter: brightness(1.1); text-decoration: none; }
 .btn.secondary { border: 1px solid var(--border); color: var(--fg); }
 .btn.secondary:hover { border-color: var(--accent); text-decoration: none; }
+.btn.small { padding: 8px 14px; font-size: 0.88rem; }
 
 /* Sections */
 section { padding: 55px 0; border-bottom: 1px solid var(--border); }
@@ -112,6 +113,7 @@ section li strong { color: var(--fg); }
 .screenshot figcaption { text-align: center; color: var(--fg-dim); font-size: 0.82rem; margin-top: 8px; }
 
 /* Code */
+.install-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
 pre {
   background: var(--bg-soft); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 14px 16px; overflow-x: auto;
