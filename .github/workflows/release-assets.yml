@@ -12,6 +12,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 concurrency:
   group: release-assets-${{ inputs.tag || github.ref_name }}
@@ -44,6 +46,7 @@ jobs:
           package="$(find dist/release-a -maxdepth 1 -name 'notify-sound_*_all.deb' -type f -print -quit)"
           other="dist/release-b/$(basename "$package")"
           cmp "$package" "$other"
+          echo "PACKAGE_PATH=$package" >> "$GITHUB_ENV"
           (cd "$(dirname "$package")" && sha256sum "$(basename "$package")" > "$(basename "$package").sha256")
           package_sha256="$(sha256sum "$package" | cut -d ' ' -f 1)"
           package_size="$(stat -c '%s' "$package")"
@@ -78,3 +81,7 @@ jobs:
             "$package.sha256" \
             "dist/release-a/${PACKAGE_NAME}.buildinfo.json" \
             --clobber
+      - name: Attest Debian package
+        uses: actions/attest-build-provenance@c074443f1aee8d4aeeae555aebba3282517141b2 # v2.2.3
+        with:
+          subject-path: ${{ env.PACKAGE_PATH }}
