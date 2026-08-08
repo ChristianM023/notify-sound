@@ -4,7 +4,7 @@ import re
 import stat
 import subprocess
 
-AUDIO_EXTENSIONS = ("*.oga", "*.ogg", "*.wav")
+AUDIO_EXTENSIONS = ("*.oga", "*.ogg", "*.wav", "*.flac")
 _THEME_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 
 

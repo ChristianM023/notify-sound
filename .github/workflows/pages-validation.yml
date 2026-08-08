@@ -1,0 +1,69 @@
+name: Validate Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pages-validation:
+    name: pages-validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Validate landing assets and translations
+        run: |
+          python3 - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+          from urllib.parse import urlparse
+
+          root = Path("docs")
+          html = (root / "index.html").read_text(encoding="utf-8")
+
+          class Checker(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.assets = []
+                  self.links = []
+
+              def handle_starttag(self, tag, attrs):
+                  values = dict(attrs)
+                  if tag in {"img", "script", "link"}:
+                      source = values.get("src") or values.get("href")
+                      if source:
+                          self.assets.append(source)
+                  if tag == "a" and values.get("href"):
+                      self.links.append(values["href"])
+                  if "data-en" in values or "data-es" in values:
+                      if "data-en" not in values or "data-es" not in values:
+                          raise AssertionError(f"translation pair missing on {tag}")
+
+          checker = Checker()
+          checker.feed(html)
+          for source in checker.assets:
+              parsed = urlparse(source)
+              if parsed.scheme or source.startswith("#"):
+                  continue
+              if not (root / source.split("#", 1)[0]).is_file():
+                  raise AssertionError(f"missing landing asset: {source}")
+          required = (
+              "https://github.com/ChristianM023/notify-sound/releases/download/"
+              "v0.1.7/notify-sound_0.1.7_all.deb"
+          )
+          if required not in checker.links:
+              raise AssertionError("current Debian release link is missing")
+          print(f"Pages validation ok: {len(checker.assets)} assets, {len(checker.links)} links")
+          PY

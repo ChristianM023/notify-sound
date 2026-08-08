@@ -70,7 +70,7 @@ Ubuntu/Debian users can install the release package without cloning the
 repository:
 
 ```sh
-sudo dpkg -i ./notify-sound_0.1.6_all.deb
+sudo dpkg -i ./notify-sound_0.1.7_all.deb
 sudo apt-get -f install
 notify-sound
 ```
@@ -259,14 +259,21 @@ asserts on what would be played/skipped. Add a test for every new behavior.
 ### Release checklist
 
 1. Bump `__version__` in `notify_sound/__init__.py`.
-2. Add a Changelog entry below.
-3. Run the full test suite.
-4. `./install.sh` to deploy, then restart the daemon
+2. Add a Changelog entry below and update versioned release links.
+3. Run the full test suite and build the Debian package twice with the same
+   `SOURCE_DATE_EPOCH`; the resulting `.deb` files must have identical SHA-256
+   hashes.
+4. Merge through a PR with the required `tests` and `pages-validation` checks.
+5. Create and push the matching `vX.Y.Z` tag, then publish the `.deb` and its
+   portable checksum as release assets.
+6. `./install.sh` to deploy, then restart the daemon
    (`notify-sound --quit && notify-sound --daemon`).
-5. Commit with a descriptive message.
+7. Verify the release asset checksum and the successful GitHub Pages deployment.
 
 ## Changelog
 
+- **0.1.7** — reproducible Debian builds and checksums, required Pages
+  validation, FLAC theme sounds, and a complete release checklist.
 - **0.1.6** — security hardening: quote-aware bounded notification parsing,
   GTK notification support (including Ptyxis), private atomic config/state
   writes, bounded playback and decoder timeouts, safe sound/path validation,

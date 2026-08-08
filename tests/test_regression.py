@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from notify_sound import config, daemon, player
+from notify_sound import config, daemon, player, sounds
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -272,6 +272,23 @@ class ConfigTests(unittest.TestCase):
         finally:
             first.close()
             config.remove_pid()
+
+
+class SoundTests(unittest.TestCase):
+    def test_theme_flac_is_listed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            stereo = root / "sounds" / "test-theme" / "stereo"
+            stereo.mkdir(parents=True)
+            flac = stereo / "theme-tone.flac"
+            flac.write_bytes(b"not-a-real-audio-file")
+            with mock.patch.object(
+                sounds, "theme_name", return_value="test-theme"
+            ), mock.patch.dict(
+                os.environ, {"XDG_DATA_DIRS": str(root)}, clear=False
+            ):
+                available = sounds.list_sounds()
+        self.assertEqual(available["theme-tone"], str(flac))
 
 
 class DaemonTests(ConfigTests):
