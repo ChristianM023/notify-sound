@@ -758,7 +758,13 @@ class ProcessRegressionTests(unittest.TestCase):
             home = root / "home"
             prefix = root / "opt" / "test"
             env = os.environ.copy()
-            env.update({"HOME": str(home), "PREFIX": str(prefix)})
+            env.update(
+                {
+                    "HOME": str(home),
+                    "PREFIX": str(prefix),
+                    "XDG_CONFIG_HOME": str(home / ".config"),
+                }
+            )
             subprocess.run(
                 [str(ROOT / "install.sh")],
                 cwd=ROOT,
