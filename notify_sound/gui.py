@@ -39,7 +39,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
         super().__init__(
             application=app, title="NotifySound",
-            default_width=720, default_height=680,
+            default_width=650, default_height=950,
         )
         self.cfg = config.load_config()
         self.theme_ids = sorted(sounds.list_sounds().keys())
