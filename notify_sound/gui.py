@@ -127,7 +127,8 @@ class NotifyWindow(Gtk.ApplicationWindow):
         custom_scroll = Gtk.ScrolledWindow(
             vexpand=False, hscrollbar_policy=Gtk.PolicyType.NEVER,
         )
-        custom_scroll.set_max_content_height(110)
+        custom_scroll.set_min_content_height(120)
+        custom_scroll.set_max_content_height(180)
         custom_scroll.set_propagate_natural_height(False)
         custom_scroll.set_child(self.custom_box)
         root.append(custom_scroll)
@@ -743,9 +744,14 @@ class NotifyWindow(Gtk.ApplicationWindow):
             files = dialog.open_multiple_finish(result)
         except GLib.Error:
             return
+        if files is None:
+            return
         existing = set(self.cfg.get("custom_sounds", []))
         changed = False
-        for gfile in files:
+        for index in range(files.get_n_items()):
+            gfile = files.get_item(index)
+            if gfile is None:
+                continue
             path = gfile.get_path()
             if path and path not in existing:
                 self.cfg.setdefault("custom_sounds", []).append(path)

@@ -626,6 +626,22 @@ class DaemonTests(ConfigTests):
         play.assert_called_once_with("message")
         self.assertEqual(instance.seen, {"aimp"})
 
+    def test_sender_pid_resolution_falls_back_to_cmdline_when_comm_truncated(self):
+        with mock.patch.object(
+            daemon, "_query_connection_pid", return_value=1234
+        ), mock.patch.object(
+            daemon, "_read_proc_comm", return_value="telegram-deskto"
+        ), mock.patch.object(
+            daemon, "_read_proc_cmdline_name", return_value="telegram-desktop"
+        ):
+            instance, monitor = self.make_daemon(
+                notification("New message", trailing_blank=False),
+                resolve_sender=True,
+            )
+            with mock.patch.object(player, "play_choice"):
+                instance._reader(monitor)
+        self.assertEqual(instance.seen, {"telegram-desktop"})
+
     def test_sender_pid_resolution_returns_none_when_dbus_send_missing(self):
         with mock.patch.object(
             daemon, "_query_connection_pid", return_value=None
@@ -1629,8 +1645,11 @@ class GuiTests(unittest.TestCase):
         gfile_a.get_path.return_value = "/new1.wav"
         gfile_b = mock.Mock()
         gfile_b.get_path.return_value = "/new2.wav"
+        files = mock.Mock()
+        files.get_n_items.return_value = 2
+        files.get_item.side_effect = [gfile_a, gfile_b]
         dialog = mock.Mock()
-        dialog.open_multiple_finish.return_value = [gfile_a, gfile_b]
+        dialog.open_multiple_finish.return_value = files
         with mock.patch.object(window, "_save") as save, \
              mock.patch.object(window, "_refresh_custom_list") as refresh, \
              mock.patch.object(window, "_rebuild_all_dropdowns") as rebuild:

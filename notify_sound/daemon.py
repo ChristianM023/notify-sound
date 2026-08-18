@@ -109,7 +109,10 @@ def _resolve_sender_to_comm(sender):
         return cached[1]
     pid = _query_connection_pid(sender)
     comm = _read_proc_comm(pid) if pid else None
-    if not comm or comm in _GENERIC_COMMS:
+    # /proc/PID/comm is kernel-truncated to 15 chars (TASK_COMM_LEN).
+    # If it's exactly 15, assume truncation and try cmdline for the
+    # full binary name (e.g. "telegram-deskto" -> "telegram-desktop").
+    if (not comm) or (comm in _GENERIC_COMMS) or (len(comm) == 15):
         cmdline_name = _read_proc_cmdline_name(pid) if pid else None
         if cmdline_name:
             comm = cmdline_name
