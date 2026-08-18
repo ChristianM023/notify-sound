@@ -119,11 +119,23 @@ notify-sound --quit     # stop the daemon
   `~/.config/autostart/notify-sound.desktop`)
 - Global sound picker (theme sounds from the active sound theme) + **Test** button
 - Add any number of **custom sound files**; they appear in the global and
-  per-app sound pickers
+  per-app sound pickers (the list is capped to 3 visible rows with scroll)
 - "No duplicate" mode: keep the app's own sound when it sends one
 - Per-app enable/disable, per-app sound selection and per-app **Test** button
-- Start/stop daemon buttons (the GUI is single-instance: launching it again
-  focuses the existing window)
+- **App aliasing**: rename detected apps to a friendly display name
+  ("AIMP" instead of the lowercase process id) via the "Renombrar" button
+- **App fusion**: renaming an app to an alias already in use opens a
+  confirmation popover to merge the two entries; the duplicate becomes a
+  synonym and its future notifications are attributed to the survivor
+- **App info popover**: per-app "Información" button shows the raw
+  notification name, display alias, detected process, synonym count,
+  notification count and last-seen time; synonyms can be restored to
+  separate entries from here
+- **App list management**: remove individual apps or "Vaciar lista" to
+  reset all detected apps and their configuration
+- **App sorting**: by arrival (default), by name, or by notification count
+- Start/stop daemon buttons with live status (the GUI is single-instance:
+  launching it again focuses the existing window)
 
 ## Custom sound formats
 
@@ -317,15 +329,17 @@ asserts on what would be played/skipped. Add a test for every new behavior.
 
 - **0.1.10** — fix app-info counters and timestamps not updating after
   the first notification (the daemon now persists `seen_count`/`last_seen`
-  on every `_record_app`); fix long app names being cut to ~15 chars by
-  widening the window to 720px, giving the name label a 28-char minimum,
-  and compacting the per-row **Probar** button into a play icon with
-  tooltip. GUI improvements: custom sounds list is now capped to ~3 rows
-  with its own scroll (so it no longer steals vertical space from the
-  apps list); app list can be sorted by arrival (default), by name, or
-  by notification count via a new dropdown in the "Aplicaciones" header;
-  the daemon status label moved next to the Start/Stop buttons; the
-  custom-sound file dialog accepts multiple files at once.
+  on every `_record_app`); fix long app names being cut by widening the
+  window and giving the name label a 28-char minimum, compacting the
+  per-row **Probar** button into a play icon with tooltip. Fix process
+  name truncation: fall back to `/proc/PID/cmdline` when `comm` is
+  kernel-truncated to 15 chars (`telegram-deskto` → `telegram-desktop`).
+  GUI improvements: custom sounds list is capped to ~3 rows with its own
+  scroll (so it no longer steals vertical space from the apps list); app
+  list can be sorted by arrival (default), by name, or by notification
+  count via a new dropdown in the "Aplicaciones" header; the daemon
+  status label moved next to the Start/Stop buttons; per-app remove
+  button and "Vaciar lista" to reset the whole detected list.
 - **0.1.9** — auto-consolidate apps like AIMP that send the song title as
   `app_name` and no `desktop-entry` hint: the daemon now resolves the D-Bus
   `sender` connection to a PID (`dbus-send
