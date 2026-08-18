@@ -119,11 +119,23 @@ notify-sound --quit     # stop the daemon
   `~/.config/autostart/notify-sound.desktop`)
 - Global sound picker (theme sounds from the active sound theme) + **Test** button
 - Add any number of **custom sound files**; they appear in the global and
-  per-app sound pickers
+  per-app sound pickers (the list is capped to 3 visible rows with scroll)
 - "No duplicate" mode: keep the app's own sound when it sends one
 - Per-app enable/disable, per-app sound selection and per-app **Test** button
-- Start/stop daemon buttons (the GUI is single-instance: launching it again
-  focuses the existing window)
+- **App aliasing**: rename detected apps to a friendly display name
+  ("AIMP" instead of the lowercase process id) via the "Renombrar" button
+- **App fusion**: renaming an app to an alias already in use opens a
+  confirmation popover to merge the two entries; the duplicate becomes a
+  synonym and its future notifications are attributed to the survivor
+- **App info popover**: per-app "Información" button shows the raw
+  notification name, display alias, detected process, synonym count,
+  notification count and last-seen time; synonyms can be restored to
+  separate entries from here
+- **App list management**: remove individual apps or "Vaciar lista" to
+  reset all detected apps and their configuration
+- **App sorting**: by arrival (default), by name, or by notification count
+- Start/stop daemon buttons with live status (the GUI is single-instance:
+  launching it again focuses the existing window)
 
 ## Custom sound formats
 
@@ -148,23 +160,45 @@ Stored in `~/.config/notify-sound/config.json`:
   "no_duplicate": true,
   "autostart": true,
   "apps": {
-    "warp": { "enabled": true, "sound": null }
+    "warp": { "enabled": true, "sound": null },
+    "aimp": {
+      "enabled": true,
+      "sound": null,
+      "name": "AIMP",
+      "synonyms": ["Canción A", "Canción B"]
+    }
   }
 }
 ```
 
 `"sound"` is the current choice: a theme sound id (`message`,
 `dialog-warning`, ...) or the path of one of the files in `custom_sounds`.
-`"sound": null` inside an app means "inherit the global sound".
+`"sound": null` inside an app means "inherit the global sound". The
+optional `"name"` field is a display alias for the auto-detected app list
+(for example to show "AIMP" instead of the lowercase `desktop-entry` id);
+it is editable from the GUI's "Renombrar" button and stays bounded by
+`MAX_APP_NAME_LENGTH`. The optional `"synonyms"` list (bounded by
+`MAX_SYNONYMS = 64`) records raw `app_name` values that should be
+attributed to this entry — populated when you fuse two entries from the
+GUI (renaming one to the other's alias) and used by the daemon to
+canonicalize future notifications from those sources.
 
-`~/.config/notify-sound/state.json` holds the auto-detected app list:
+`~/.config/notify-sound/state.json` holds the auto-detected app list and
+per-app metadata:
 
 ```json
-{ "apps_seen": ["warp", "Telegram Desktop", "notify-send"] }
+{
+  "apps_seen": ["aimp", "warp", "Telegram Desktop"],
+  "app_meta": {
+    "aimp": { "seen_count": 12, "last_seen": 1777000000.5, "comm": "aimp" }
+  }
+}
 ```
 
 The app list is auto-detected, so entries are re-added when the app sends
-a new notification.
+a new notification. `app_meta` powers the "Información" popover (count,
+last-seen time, detected process) and is written by the daemon; it is
+optional and tolerated when absent (v0.1.7 state files still load).
 
 ## Troubleshooting
 
@@ -237,6 +271,21 @@ asserts on what would be played/skipped. Add a test for every new behavior.
   strings, so notification content cannot imitate a terminator or header.
 - gnome-shell re-sends every notification with `x-shell-sender` +
   `x-shell-sender-pid` hints; those blocks must be skipped.
+- The canonical app name (used for the per-app config lookup and for the
+  auto-detected app list) is resolved, in order, from:
+  1. the **`desktop-entry` hint** when present and valid; otherwise
+  2. the **process `comm`** resolved from the D-Bus `sender` connection
+     via `dbus-send … GetConnectionUnixProcessID` + `/proc/<pid>/comm`
+     (cached 5 min; skips generic interpreters like `python3`/`sh`,
+     fallings back to `/proc/<pid>/cmdline`); otherwise
+  3. the **first matching synonym** declared in another app's
+     `synonyms` list in `config.json`; otherwise
+  4. the raw first `string` argument (`app_name`).
+  This fixes apps like AIMP that send the song title as `app_name` and
+  would otherwise create one list entry per song. The `desktop-entry` hint
+  value is read from the `variant string "..."` line that follows the
+  `string "desktop-entry"` key; quoted strings stay tracked by the same
+  state machine, so neither the key nor the value can fake framing.
 - Playback rules, in order: master `enabled` off → nothing; `suppress-sound`
   hint → always nothing; per-app disabled → nothing; `sound-file`/`sound-name`
   hint with `no_duplicate` → nothing; otherwise play the app's choice or the
@@ -278,6 +327,46 @@ asserts on what would be played/skipped. Add a test for every new behavior.
 
 ## Changelog
 
+- **0.1.10** — fix app-info counters and timestamps not updating after
+  the first notification (the daemon now persists `seen_count`/`last_seen`
+  on every `_record_app`); fix long app names being cut by widening the
+  window and giving the name label a 28-char minimum, compacting the
+  per-row **Probar** button into a play icon with tooltip. Fix process
+  name truncation: fall back to `/proc/PID/cmdline` when `comm` is
+  kernel-truncated to 15 chars (`telegram-deskto` → `telegram-desktop`).
+  GUI improvements: custom sounds list is capped to ~3 rows with its own
+  scroll (so it no longer steals vertical space from the apps list); app
+  list can be sorted by arrival (default), by name, or by notification
+  count via a new dropdown in the "Aplicaciones" header; the daemon
+  status label moved next to the Start/Stop buttons; per-app remove
+  button and "Vaciar lista" to reset the whole detected list.
+- **0.1.9** — auto-consolidate apps like AIMP that send the song title as
+  `app_name` and no `desktop-entry` hint: the daemon now resolves the D-Bus
+  `sender` connection to a PID (`dbus-send
+  org.freedesktop.DBus.GetConnectionUnixProcessID`) and uses the process
+  `comm`/`cmdline` name as a stable canonical id (cached 5 min, tolerant
+  when `dbus-send` or `/proc` is unavailable, and skipping generic
+  interpreters like `python3`/`sh`). The canonical chain is now:
+  `desktop-entry` → resolved `comm` → known synonym → raw `app_name`.
+  Manual merge: renaming an app to an alias already in use opens a dialog
+  to fuse the two entries (the duplicate becomes a synonym, with `enabled`
+  AND-combined and `sound` inherited); duplicate aliases left in
+  `config.json` are also merged automatically on load. New **"Información"
+  popover** (per app) shows the raw notification name, the display alias,
+  the detected process, synonyms, notification count and last-seen time.
+  `state.json` now stores `app_meta` (count / `last_seen` / `comm`)
+  retrocompatibly. `MAX_SYNONYMS = 64` bounds the synonym lists.
+- **0.1.8** — fix AIMP and other apps that send the song title as the
+  notification `app_name`: when the `desktop-entry` hint is present, it is
+  used as the canonical app name (so the GUI shows one stable "aimp" row
+  instead of one entry per song); manual app aliasing via the new
+  "Renombrar" button (Popover with `Gtk.Entry`) for cases where the hint is
+  not sent; GUI fixes: long app names now ellipsize with a tooltip instead
+  of pushing the dropdown/button/switch out of view, and every switch is
+  vertically centered (`valign=CENTER`) so it no longer stretches with the
+  row height. Parser regression tests added for `desktop-entry`,
+  `x-shell-sender` + `desktop-entry`, `sound-name` + `desktop-entry` and
+  per-app config lookup by canonical name.
 - **0.1.7** — Debian package and checksum improvements, FLAC theme sounds,
   and a complete release checklist.
 - **0.1.6** — security hardening: quote-aware bounded notification parsing,

@@ -16,14 +16,21 @@ from notify_sound import config, daemon, player, sounds
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def notification(app_name, hints=(), trailing_blank=True, body="Body"):
-    hint_lines = "".join(
+def _hint_entry(hint):
+    if isinstance(hint, tuple):
+        key, value = hint
+    else:
+        key, value = hint, "message"
+    return (
         "      dict entry(\n"
-        f'         string "{hint}"\n'
-        '         variant string "message"\n'
+        f'         string "{key}"\n'
+        f'         variant string "{value}"\n'
         "      )\n"
-        for hint in hints
     )
+
+
+def notification(app_name, hints=(), trailing_blank=True, body="Body"):
+    hint_lines = "".join(_hint_entry(hint) for hint in hints)
     payload = "".join(
         [
             "method call time=1 sender=:1.1 -> "
@@ -56,7 +63,7 @@ def gtk_notification(
     entries = [
         ("title", title),
         ("body", body),
-    ] + [(hint, "message") for hint in hints]
+    ] + [hint if isinstance(hint, tuple) else (hint, "message") for hint in hints]
     notification_entries = "".join(
         "      dict entry(\n"
         f'         string "{key}"\n'
@@ -187,6 +194,23 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(loaded["sound"], legacy)
         self.assertEqual(loaded["custom_sounds"], [legacy])
 
+    def test_normalize_app_rejects_invalid_alias_and_keeps_valid(self):
+        variants = [
+            {"enabled": True, "sound": None, "name": None},
+            {"enabled": True, "sound": None, "name": ""},
+            {"enabled": True, "sound": None, "name": 12},
+            {"enabled": True, "sound": None, "name": "x" * (config.MAX_APP_NAME_LENGTH + 1)},
+        ]
+        for variant in variants:
+            self.write_config({"apps": {"aimp": variant}})
+            loaded = config.load_config()
+            self.assertNotIn("name", loaded["apps"]["aimp"], msg=str(variant))
+
+        self.write_config(
+            {"apps": {"aimp": {"enabled": True, "sound": None, "name": "AIMP"}}}
+        )
+        self.assertEqual(config.load_config()["apps"]["aimp"]["name"], "AIMP")
+
     def test_current_style_config_round_trips_custom_sounds_and_apps(self):
         current = {
             "enabled": True,
@@ -212,9 +236,102 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.load_config(), current)
 
     def test_registered_state_keeps_existing_apps(self):
-        state = {"apps_seen": ["Telegram Desktop", "notify-send", "warp"]}
+        state = {
+            "apps_seen": ["Telegram Desktop", "notify-send", "warp"],
+            "app_meta": {"warp": {"seen_count": 3, "comm": "warp"}},
+        }
         Path(config.STATE_FILE).write_text(json.dumps(state), encoding="utf-8")
         self.assertEqual(config.load_state(), state)
+
+    def test_find_alias_owner_resolves_key_or_name(self):
+        cfg = {
+            "apps": {
+                "aimp": {"enabled": True, "sound": None, "name": "AIMP"},
+                "warp": {"enabled": True, "sound": None},
+            }
+        }
+        self.assertEqual(config._find_alias_owner(cfg, "AIMP"), "aimp")
+        self.assertEqual(config._find_alias_owner(cfg, "warp"), "warp")
+        self.assertIsNone(config._find_alias_owner(cfg, "unknown"))
+
+    def test_find_alias_owner_returns_none_when_ambiguous(self):
+        cfg = {
+            "apps": {
+                "aimp1": {"name": "AIMP"},
+                "aimp2": {"name": "AIMP"},
+            }
+        }
+        self.assertIsNone(config._find_alias_owner(cfg, "AIMP"))
+
+    def test_config_migration_merges_duplicate_aliases_and_moves_to_synonyms(self):
+        self.write_config(
+            {
+                "apps": {
+                    "songA": {
+                        "enabled": True, "sound": None, "name": "AIMP",
+                    },
+                    "songB": {
+                        "enabled": False,
+                        "sound": "/tmp/x.wav",
+                        "name": "AIMP",
+                    },
+                }
+            }
+        )
+        Path(config.STATE_FILE).write_text(
+            json.dumps({"apps_seen": ["songA", "songB"]}),
+            encoding="utf-8",
+        )
+        config.load_config()
+        merged = config.load_config()
+        apps = merged["apps"]
+        self.assertEqual(set(apps), {"songA"})
+        survivor = apps["songA"]
+        self.assertEqual(survivor["name"], "AIMP")
+        self.assertEqual(survivor["enabled"], False)
+        self.assertEqual(survivor["sound"], "/tmp/x.wav")
+        self.assertIn("songB", survivor.get("synonyms", []))
+        state = config.load_state()
+        self.assertIn("songA", state["apps_seen"])
+        self.assertNotIn("songB", state["apps_seen"])
+
+    def test_config_migration_drops_state_synonyms_from_apps_seen(self):
+        self.write_config(
+            {
+                "apps": {
+                    "aimp": {
+                        "enabled": True, "sound": None, "name": "AIMP",
+                        "synonyms": ["Canción antigua"],
+                    }
+                }
+            }
+        )
+        Path(config.STATE_FILE).write_text(
+            json.dumps(
+                {"apps_seen": ["aimp", "Canción antigua", "warp"]}
+            ),
+            encoding="utf-8",
+        )
+        config.load_config()
+        self.assertEqual(
+            config.load_state()["apps_seen"], ["aimp", "warp"]
+        )
+
+    def test_normalize_app_rejects_synonyms_duplicates_and_bounds(self):
+        long_value = "x" * (config.MAX_APP_NAME_LENGTH + 1)
+        variant = {
+            "enabled": True,
+            "sound": None,
+            "synonyms": ["a", "a", "b", "", long_value]
+            + [f"s{i}" for i in range(config.MAX_SYNONYMS)],
+        }
+        self.write_config({"apps": {"aimp": variant}})
+        loaded = config.load_config()
+        synonyms = loaded["apps"]["aimp"]["synonyms"]
+        self.assertEqual(len(synonyms), config.MAX_SYNONYMS)
+        self.assertEqual(len(set(synonyms)), len(synonyms))
+        self.assertNotIn("", synonyms)
+        self.assertNotIn(long_value, synonyms)
 
     def test_json_files_are_private_and_state_is_bounded(self):
         config.save_config(config.DEFAULT_CONFIG)
@@ -292,7 +409,14 @@ class SoundTests(unittest.TestCase):
 
 
 class DaemonTests(ConfigTests):
-    def make_daemon(self, payload):
+    def make_daemon(self, payload, resolve_sender=False):
+        daemon._sender_cache.clear()
+        if not resolve_sender:
+            patcher = mock.patch.object(
+                daemon, "_resolve_sender_to_comm", return_value=None
+            )
+            patcher.start()
+            self.addCleanup(patcher.stop)
         instance = daemon.NotifyDaemon()
         instance.loop = FakeLoop()
         instance.accept_restarts = False
@@ -389,6 +513,218 @@ class DaemonTests(ConfigTests):
         with mock.patch.object(player, "play_choice") as play:
             instance._reader(monitor)
         play.assert_not_called()
+
+    def test_desktop_entry_hint_overrides_dynamic_app_name(self):
+        instance, monitor = self.make_daemon(
+            notification(
+                "Pink Floyd - Time",
+                hints=(("desktop-entry", "aimp"),),
+                trailing_blank=False,
+            )
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("message")
+        self.assertEqual(instance.seen, {"aimp"})
+
+    def test_desktop_entry_hint_is_ignored_when_empty_or_too_long(self):
+        long_value = "x" * (config.MAX_APP_NAME_LENGTH + 1)
+
+        instance, monitor = self.make_daemon(
+            notification(
+                "short",
+                hints=(("desktop-entry", ""),),
+                trailing_blank=False,
+            )
+        )
+        with mock.patch.object(player, "play_choice"):
+            instance._reader(monitor)
+        self.assertEqual(instance.seen, {"short"})
+
+        instance, monitor = self.make_daemon(
+            notification(
+                "short",
+                hints=(("desktop-entry", long_value),),
+                trailing_blank=False,
+            )
+        )
+        with mock.patch.object(player, "play_choice"):
+            instance._reader(monitor)
+        self.assertEqual(instance.seen, {"short"})
+
+    def test_desktop_entry_hint_keeps_x_shell_sender_and_sound_name_rules(self):
+        payload = (
+            notification(
+                "Some Song Title",
+                hints=(("desktop-entry", "aimp"), "sound-name"),
+                trailing_blank=False,
+            )
+            + notification(
+                "Some Song Title",
+                hints=(("desktop-entry", "aimp"), "x-shell-sender"),
+                trailing_blank=False,
+            )
+        )
+        instance, monitor = self.make_daemon(payload)
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_not_called()
+        self.assertEqual(instance.seen, {"aimp"})
+
+    def test_desktop_entry_hint_overrides_per_app_config_lookup(self):
+        self.write_config(
+            {
+                "sound": "message",
+                "apps": {"aimp": {"enabled": False, "sound": None}},
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification(
+                "Any Song Title",
+                hints=(("desktop-entry", "aimp"),),
+                trailing_blank=False,
+            )
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_not_called()
+        self.assertEqual(instance.seen, {"aimp"})
+
+    def test_sender_pid_resolution_canonicalizes_to_comm(self):
+        with mock.patch.object(
+            daemon, "_query_connection_pid", return_value=1234
+        ), mock.patch.object(
+            daemon, "_read_proc_comm", return_value="aimp"
+        ), mock.patch.object(daemon, "_read_proc_cmdline_name") as cmdline:
+            instance, monitor = self.make_daemon(
+                notification("Pink Floyd - Time", trailing_blank=False),
+                resolve_sender=True,
+            )
+            with mock.patch.object(player, "play_choice") as play:
+                instance._reader(monitor)
+        cmdline.assert_not_called()
+        play.assert_called_once_with("message")
+        self.assertEqual(instance.seen, {"aimp"})
+        state = config.load_state()
+        self.assertEqual(state["app_meta"]["aimp"]["comm"], "aimp")
+        self.assertGreaterEqual(state["app_meta"]["aimp"]["seen_count"], 1)
+
+    def test_sender_pid_resolution_skips_generic_comm_like_python(self):
+        with mock.patch.object(
+            daemon, "_query_connection_pid", return_value=1234
+        ), mock.patch.object(
+            daemon, "_read_proc_comm", return_value="python3"
+        ), mock.patch.object(
+            daemon, "_read_proc_cmdline_name", return_value="aimp"
+        ):
+            instance, monitor = self.make_daemon(
+                notification("Some Song Title", trailing_blank=False),
+                resolve_sender=True,
+            )
+            with mock.patch.object(player, "play_choice") as play:
+                instance._reader(monitor)
+        play.assert_called_once_with("message")
+        self.assertEqual(instance.seen, {"aimp"})
+
+    def test_sender_pid_resolution_falls_back_to_cmdline_when_comm_truncated(self):
+        with mock.patch.object(
+            daemon, "_query_connection_pid", return_value=1234
+        ), mock.patch.object(
+            daemon, "_read_proc_comm", return_value="telegram-deskto"
+        ), mock.patch.object(
+            daemon, "_read_proc_cmdline_name", return_value="telegram-desktop"
+        ):
+            instance, monitor = self.make_daemon(
+                notification("New message", trailing_blank=False),
+                resolve_sender=True,
+            )
+            with mock.patch.object(player, "play_choice"):
+                instance._reader(monitor)
+        self.assertEqual(instance.seen, {"telegram-desktop"})
+
+    def test_sender_pid_resolution_returns_none_when_dbus_send_missing(self):
+        with mock.patch.object(
+            daemon, "_query_connection_pid", return_value=None
+        ):
+            instance, monitor = self.make_daemon(
+                notification("notify-send", trailing_blank=False),
+                resolve_sender=True,
+            )
+            with mock.patch.object(player, "play_choice"):
+                instance._reader(monitor)
+        self.assertEqual(instance.seen, {"notify-send"})
+
+    def test_synonyms_lookup_canonicalizes_known_app_name(self):
+        self.write_config(
+            {
+                "sound": "message",
+                "apps": {
+                    "aimp": {
+                        "enabled": True,
+                        "sound": None,
+                        "synonyms": ["Canción conocida"],
+                    }
+                },
+            }
+        )
+        with mock.patch.object(
+            daemon, "_query_connection_pid", return_value=None
+        ):
+            instance, monitor = self.make_daemon(
+                notification(
+                    "Canción conocida", trailing_blank=False
+                )
+            )
+            with mock.patch.object(player, "play_choice") as play:
+                instance._reader(monitor)
+        play.assert_called_once_with("message")
+        self.assertEqual(instance.seen, {"aimp"})
+
+    def test_app_meta_persists_comm_and_count_after_record(self):
+        with mock.patch.object(
+            daemon, "_query_connection_pid", return_value=4321
+        ), mock.patch.object(
+            daemon, "_read_proc_comm", return_value="vlc"
+        ):
+            instance, monitor = self.make_daemon(
+                notification("Video title", trailing_blank=False),
+                resolve_sender=True,
+            )
+            with mock.patch.object(player, "play_choice"):
+                instance._reader(monitor)
+        meta = config.load_state()["app_meta"]["vlc"]
+        self.assertEqual(meta["comm"], "vlc")
+        self.assertGreaterEqual(meta["seen_count"], 1)
+        self.assertIn("last_seen", meta)
+
+    def test_sync_seen_with_state_relists_app_after_gui_reset(self):
+        instance, monitor = self.make_daemon(
+            notification("notify-send", trailing_blank=False)
+        )
+        instance._record_app("notify-send")
+        self.assertIn("notify-send", config.load_state()["apps_seen"])
+
+        config.save_state({"apps_seen": [], "app_meta": {}})
+        self.assertEqual(config.load_state()["apps_seen"], [])
+
+        instance._record_app("notify-send")
+        self.assertIn(
+            "notify-send", config.load_state()["apps_seen"]
+        )
+
+    def test_record_app_persists_seen_count_on_every_notification(self):
+        instance, monitor = self.make_daemon(
+            notification("notify-send", trailing_blank=False)
+        )
+        instance._record_app("notify-send")
+        first_seen = config.load_state()["app_meta"]["notify-send"]["last_seen"]
+        self.assertEqual(
+            config.load_state()["app_meta"]["notify-send"]["seen_count"], 1
+        )
+        instance._record_app("notify-send")
+        meta = config.load_state()["app_meta"]["notify-send"]
+        self.assertEqual(meta["seen_count"], 2)
+        self.assertGreaterEqual(meta["last_seen"], first_seen)
 
     def test_gtk_string_content_cannot_fake_array_end(self):
         instance, monitor = self.make_daemon(
@@ -532,6 +868,17 @@ class ProcessRegressionTests(unittest.TestCase):
             ''',
         )
 
+    def write_dbus_send(self, directory):
+        # Stub that prints nothing: the sender resolver in the daemon
+        # gets no uint32 line and falls back to None, isolating process
+        # tests from the host's real D-Bus session.
+        self.write_executable(
+            directory / "dbus-send",
+            '''
+            #!/usr/bin/python3
+            ''',
+        )
+
     def write_config(self, config_dir):
         config_dir.mkdir(parents=True, exist_ok=True)
         (config_dir / "config.json").write_text(
@@ -594,6 +941,7 @@ class ProcessRegressionTests(unittest.TestCase):
         fake_bin.mkdir(parents=True, exist_ok=True)
         runtime_dir.mkdir()
         self.write_config(config_dir)
+        self.write_dbus_send(fake_bin)
         values = {
             "FAKE_BIN": str(fake_bin),
             "XDG_CONFIG_HOME": str(root / "config"),
@@ -853,6 +1201,463 @@ class GuiTests(unittest.TestCase):
         release.assert_called_once_with()
         self.assertFalse(app._held)
         self.assertIsNone(app.window)
+
+    def _bare_window(self, cfg):
+        from notify_sound import gui
+
+        window = gui.NotifyWindow.__new__(gui.NotifyWindow)
+        window.cfg = cfg
+        window.app_rows = {}
+        window.apps_list = mock.Mock()
+        window._rebuilding = False
+        return window
+
+    def test_display_name_prefers_alias_over_canonical(self):
+        from notify_sound import gui
+
+        window = self._bare_window({"apps": {"aimp": {"name": "AIMP"}}})
+        self.assertEqual(window._display_name("aimp"), "AIMP")
+        self.assertEqual(window._display_name("telegram"), "telegram")
+
+    def test_app_rename_save_updates_config_and_label(self):
+        from notify_sound import gui
+
+        cfg = {"apps": {"aimp": {"enabled": True, "sound": None}}}
+        window = self._bare_window(cfg)
+        label = mock.Mock()
+        popover = mock.Mock()
+        entry = mock.Mock()
+        entry.get_text.return_value = "  AIMP  "
+        window.app_rows = {"aimp": {"name_label": label}}
+        with mock.patch.object(window, "_save") as save:
+            gui.NotifyWindow._on_app_rename_save(window, None, "aimp", entry, popover)
+        save.assert_called_once_with()
+        self.assertEqual(cfg["apps"]["aimp"]["name"], "AIMP")
+        label.set_text.assert_called_once_with("AIMP")
+        popover.popdown.assert_called_once_with()
+
+    def test_app_rename_save_rejects_empty_and_too_long_aliases(self):
+        from notify_sound import gui
+
+        cfg = {"apps": {"aimp": {"enabled": True, "sound": None}}}
+        window = self._bare_window(cfg)
+
+        label = mock.Mock()
+        popover = mock.Mock()
+        entry = mock.Mock()
+        entry.get_text.return_value = "   "
+        window.app_rows = {"aimp": {"name_label": label}}
+        with mock.patch.object(window, "_save") as save:
+            gui.NotifyWindow._on_app_rename_save(window, None, "aimp", entry, popover)
+        save.assert_not_called()
+        label.set_text.assert_not_called()
+        popover.popdown.assert_not_called()
+
+        long_value = "x" * (config.MAX_APP_NAME_LENGTH + 1)
+        entry.get_text.return_value = long_value
+        with mock.patch.object(window, "_save") as save:
+            gui.NotifyWindow._on_app_rename_save(window, None, "aimp", entry, popover)
+        save.assert_not_called()
+        self.assertNotIn("name", cfg["apps"]["aimp"])
+
+    def test_app_rename_reset_removes_alias_and_restores_label(self):
+        from notify_sound import gui
+
+        cfg = {"apps": {"aimp": {"enabled": True, "sound": None, "name": "Me AIM"}}}
+        window = self._bare_window(cfg)
+        label = mock.Mock()
+        popover = mock.Mock()
+        window.app_rows = {"aimp": {"name_label": label}}
+        with mock.patch.object(window, "_save") as save:
+            gui.NotifyWindow._on_app_rename_reset(window, None, "aimp", popover)
+        save.assert_called_once_with()
+        self.assertNotIn("name", cfg["apps"]["aimp"])
+        label.set_text.assert_called_once_with("aimp")
+        popover.popdown.assert_called_once_with()
+
+    def test_app_rename_reset_is_noop_when_no_alias(self):
+        from notify_sound import gui
+
+        cfg = {"apps": {"aimp": {"enabled": True, "sound": None}}}
+        window = self._bare_window(cfg)
+        label = mock.Mock()
+        popover = mock.Mock()
+        window.app_rows = {"aimp": {"name_label": label}}
+        with mock.patch.object(window, "_save") as save:
+            gui.NotifyWindow._on_app_rename_reset(window, None, "aimp", popover)
+        save.assert_not_called()
+        label.set_text.assert_not_called()
+        popover.popdown.assert_called_once_with()
+
+    def test_rename_to_existing_alias_prompts_merge_without_saving(self):
+        from notify_sound import gui
+
+        cfg = {
+            "apps": {
+                "songA": {"enabled": True, "sound": None, "name": "AIMP"},
+                "songB": {"enabled": True, "sound": None},
+            }
+        }
+        window = self._bare_window(cfg)
+        label = mock.Mock()
+        popover = mock.Mock()
+        entry = mock.Mock()
+        entry.get_text.return_value = "AIMP"
+        window.app_rows = {"songB": {"name_label": label}}
+        with mock.patch.object(window, "_save") as save, \
+             mock.patch.object(window, "_prompt_merge_alias") as prompt:
+            gui.NotifyWindow._on_app_rename_save(
+                window, None, "songB", entry, popover
+            )
+        save.assert_not_called()
+        label.set_text.assert_not_called()
+        popover.popdown.assert_called_once_with()
+        prompt.assert_called_once_with("songB", "AIMP", "songA")
+
+    def test_merge_app_into_moves_synonyms_and_removes_source(self):
+        from notify_sound import gui
+
+        cfg = {
+            "apps": {
+                "songB": {"enabled": False, "sound": "/tmp/x.wav"},
+                "aimp": {"enabled": True, "sound": None},
+            }
+        }
+        window = self._bare_window(cfg)
+        source_row = mock.Mock()
+        window.app_rows = {
+            "songB": {"row": source_row},
+            "aimp": {"row": mock.Mock()},
+        }
+        fake_state = {"apps_seen": ["songB", "aimp"], "app_meta": {}}
+        with mock.patch.object(window, "_save") as save, \
+             mock.patch.object(config, "load_state", return_value=fake_state), \
+             mock.patch.object(config, "save_state") as save_state:
+            window._merge_app_into("songB", "aimp")
+        save.assert_called_once_with()
+        save_state.assert_called_once()
+        self.assertNotIn("songB", cfg["apps"])
+        self.assertIn("songB", cfg["apps"]["aimp"]["synonyms"])
+        self.assertFalse(cfg["apps"]["aimp"]["enabled"])
+        self.assertEqual(cfg["apps"]["aimp"]["sound"], "/tmp/x.wav")
+        window.apps_list.remove.assert_called_once_with(source_row)
+        self.assertNotIn("songB", window.app_rows)
+
+    def test_merge_dialog_choice_confirms_fusion(self):
+        from notify_sound import gui
+
+        popover = mock.Mock()
+        window = self._bare_window({"apps": {}})
+        with mock.patch.object(window, "_merge_app_into") as merge:
+            gui.NotifyWindow._on_merge_confirm(
+                window, None, "songB", "aimp", popover
+            )
+        popover.popdown.assert_called_once_with()
+        merge.assert_called_once_with("songB", "aimp")
+
+    def test_merge_dialog_choice_cancel_does_nothing(self):
+        from notify_sound import gui
+
+        popover = mock.Mock()
+        window = self._bare_window({"apps": {}})
+        with mock.patch.object(window, "_merge_app_into") as merge:
+            gui.NotifyWindow._on_merge_cancel(window, None, popover)
+        popover.popdown.assert_called_once_with()
+        merge.assert_not_called()
+
+    def test_format_app_info_lists_canonical_alias_comm_and_synonyms(self):
+        from notify_sound import gui
+
+        cfg = {
+            "apps": {
+                "aimp": {
+                    "name": "AIMP",
+                    "synonyms": ["Song A", "Song B"],
+                }
+            }
+        }
+        window = self._bare_window(cfg)
+        fake_state = {
+            "apps_seen": ["aimp"],
+            "app_meta": {
+                "aimp": {"seen_count": 5, "comm": "aimp", "last_seen": 1700000000.0},
+            },
+        }
+        with mock.patch.object(config, "load_state", return_value=fake_state):
+            info = window._format_app_info("aimp")
+        self.assertIn("Nombre de notificación: aimp", info)
+        self.assertIn("Mostrado como: AIMP", info)
+        self.assertIn("aimp", info)
+        self.assertIn("Número de sinónimos: 2", info)
+        self.assertIn("Notificaciones: 5", info)
+        self.assertIn("Última vista:", info)
+        self.assertNotIn("aún no se ha observado", info)
+
+    def test_format_app_info_notes_legacy_when_no_app_meta(self):
+        from notify_sound import gui
+
+        cfg = {"apps": {"warp": {"enabled": True, "sound": None}}}
+        window = self._bare_window(cfg)
+        fake_state = {"apps_seen": ["warp"], "app_meta": {}}
+        with mock.patch.object(config, "load_state", return_value=fake_state):
+            info = window._format_app_info("warp")
+        self.assertIn("aún no se ha observado", info)
+        self.assertIn("Proceso emisor: —", info)
+
+    def test_app_remove_clears_config_state_and_synonym_refs(self):
+        from notify_sound import gui
+
+        cfg = {
+            "apps": {
+                "warp": {"enabled": True, "sound": None},
+                "aimp": {
+                    "enabled": True, "sound": None,
+                    "synonyms": ["songA", "warp"],
+                },
+            }
+        }
+        window = self._bare_window(cfg)
+        warp_row = mock.Mock()
+        window.app_rows = {"warp": {"row": warp_row}}
+        fake_state = {
+            "apps_seen": ["warp", "aimp"],
+            "app_meta": {"warp": {"seen_count": 2}},
+        }
+        with mock.patch.object(window, "_save") as save, \
+             mock.patch.object(config, "load_state", return_value=fake_state), \
+             mock.patch.object(config, "save_state") as save_state:
+            window._on_app_remove(None, "warp")
+        save.assert_called_once_with()
+        save_state.assert_called_once()
+        self.assertNotIn("warp", cfg["apps"])
+        self.assertNotIn("warp", cfg["apps"]["aimp"]["synonyms"])
+        window.apps_list.remove.assert_called_once_with(warp_row)
+        self.assertNotIn("warp", window.app_rows)
+        saved = save_state.call_args.args[0]
+        self.assertNotIn("warp", saved["apps_seen"])
+        self.assertNotIn("warp", saved["app_meta"])
+
+    def test_reset_apps_confirm_empties_config_state_and_rows(self):
+        from notify_sound import gui
+
+        cfg = {
+            "apps": {
+                "warp": {"enabled": True, "sound": None, "name": "Warp"},
+                "aimp": {"enabled": False, "sound": None, "synonyms": ["x"]},
+            }
+        }
+        window = self._bare_window(cfg)
+        window.app_rows = {
+            "warp": {"row": mock.Mock()},
+            "aimp": {"row": mock.Mock()},
+        }
+        popover = mock.Mock()
+        with mock.patch.object(window, "_save") as save, \
+             mock.patch.object(config, "save_state") as save_state:
+            window._on_reset_apps_confirm(None, popover)
+        popover.popdown.assert_called_once_with()
+        save.assert_called_once_with()
+        save_state.assert_called_once()
+        self.assertEqual(cfg["apps"], {})
+        self.assertEqual(window.app_rows, {})
+        self.assertEqual(save_state.call_args.args[0]["apps_seen"], [])
+        self.assertEqual(save_state.call_args.args[0]["app_meta"], {})
+        self.assertEqual(window.apps_list.remove.call_count, 2)
+
+    def test_reset_apps_cancel_does_nothing(self):
+        from notify_sound import gui
+
+        window = self._bare_window({"apps": {"warp": {"enabled": True}}})
+        popover = mock.Mock()
+        with mock.patch.object(window, "_on_reset_apps_confirm") as confirm, \
+             mock.patch.object(window, "_save") as save:
+            window._on_reset_apps_cancel(None, popover)
+        popover.popdown.assert_called_once_with()
+        save.assert_not_called()
+        confirm.assert_not_called()
+
+    def test_synonym_restore_splits_back_into_own_entry(self):
+        from notify_sound import gui
+
+        cfg = {
+            "apps": {
+                "aimp": {
+                    "enabled": True, "sound": None,
+                    "synonyms": ["songA", "songB"],
+                }
+            }
+        }
+        window = self._bare_window(cfg)
+        window.app_rows = {
+            "aimp": {
+                "row": mock.Mock(),
+                "info_popover": mock.Mock(),
+                "info_synonyms_box": mock.Mock(),
+                "info_label": mock.Mock(),
+            }
+        }
+        fake_state = {
+            "apps_seen": ["aimp"],
+            "app_meta": {"aimp": {"seen_count": 3}},
+        }
+        with mock.patch.object(window, "_save") as save, \
+             mock.patch.object(config, "load_state", return_value=fake_state), \
+             mock.patch.object(config, "save_state") as save_state, \
+             mock.patch.object(window, "_ensure_app_row") as ensure, \
+             mock.patch.object(window, "_refresh_app_sensitivity"), \
+             mock.patch.object(window, "_refresh_info_synonyms"):
+            window._on_synonym_restore(None, "aimp", "songA")
+        save.assert_called_once_with()
+        save_state.assert_called_once()
+        ensure.assert_called_once_with("songA")
+        self.assertEqual(cfg["apps"]["aimp"]["synonyms"], ["songB"])
+        saved = save_state.call_args.args[0]
+        self.assertIn("songA", saved["apps_seen"])
+
+    def test_synonym_restore_removes_synonyms_key_when_last_one(self):
+        from notify_sound import gui
+
+        cfg = {
+            "apps": {
+                "aimp": {
+                    "enabled": True, "sound": None, "synonyms": ["songA"],
+                }
+            }
+        }
+        window = self._bare_window(cfg)
+        window.app_rows = {
+            "aimp": {
+                "row": mock.Mock(),
+                "info_popover": mock.Mock(),
+                "info_synonyms_box": mock.Mock(),
+                "info_label": mock.Mock(),
+            }
+        }
+        fake_state = {"apps_seen": ["aimp"], "app_meta": {}}
+        with mock.patch.object(window, "_save"), \
+             mock.patch.object(config, "load_state", return_value=fake_state), \
+             mock.patch.object(config, "save_state"), \
+             mock.patch.object(window, "_ensure_app_row"), \
+             mock.patch.object(window, "_refresh_app_sensitivity"), \
+             mock.patch.object(window, "_refresh_info_synonyms"):
+            window._on_synonym_restore(None, "aimp", "songA")
+        self.assertNotIn("synonyms", cfg["apps"]["aimp"])
+
+    def test_populate_app_dropdown_fills_choices_for_new_row(self):
+        from notify_sound import gui
+
+        cfg = {
+            "sound": "message",
+            "custom_sounds": [],
+            "apps": {"newapp": {"enabled": True, "sound": None}},
+        }
+        window = self._bare_window(cfg)
+        window.theme_ids = ["message", "bell"]
+        dropdown = mock.Mock()
+        entry = {"dropdown": dropdown}
+        window._populate_app_dropdown("newapp", entry)
+        dropdown.set_model.assert_called_once()
+        model_arg = dropdown.set_model.call_args.args[0]
+        self.assertEqual(model_arg.get_string(0), gui.INHERITED)
+        self.assertEqual(model_arg.get_string(1), "message")
+        self.assertEqual(model_arg.get_string(2), "bell")
+        dropdown.set_selected.assert_called_once_with(0)
+
+    def test_app_row_label_uses_width_chars_and_icon_play(self):
+        from notify_sound import gui
+
+        if not os.environ.get("DISPLAY") and not os.environ.get(
+            "WAYLAND_DISPLAY"
+        ):
+            self.skipTest("requires a display to instantiate GTK widgets")
+
+        cfg = {"apps": {"warp": {"enabled": True, "sound": None}}}
+        window = self._bare_window(cfg)
+        window.theme_ids = ["message"]
+        window.apps_list = mock.Mock()
+
+        original_label = gui.Gtk.Label
+
+        class SpyLabel(original_label):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self._spy_width = None
+                self._spy_max_width = None
+
+            def set_width_chars(self, n):
+                self._spy_width = n
+                super().set_width_chars(n)
+
+            def set_max_width_chars(self, n):
+                self._spy_max_width = n
+                super().set_max_width_chars(n)
+
+        class SpyButton(gui.Gtk.Button):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self._spy_icon = None
+
+            def set_icon_name(self, name):
+                self._spy_icon = name
+                super().set_icon_name(name)
+
+        with mock.patch.object(gui.Gtk, "Label", SpyLabel), \
+             mock.patch.object(gui.Gtk, "Button", SpyButton):
+            window._ensure_app_row("warp")
+
+        entry = window.app_rows["warp"]
+        label = entry["name_label"]
+        self.assertEqual(label._spy_width, 28)
+        self.assertEqual(label._spy_max_width, 50)
+
+    def test_sort_apps_by_name_and_by_count(self):
+        from notify_sound import gui
+
+        cfg = {
+            "apps": {
+                "warp": {"enabled": True, "sound": None},
+                "aimp": {"enabled": True, "sound": None, "name": "AIMP"},
+                "vlc": {"enabled": True, "sound": None},
+            }
+        }
+        window = self._bare_window(cfg)
+        fake_state = {
+            "apps_seen": ["warp", "aimp", "vlc"],
+            "app_meta": {
+                "warp": {"seen_count": 5},
+                "aimp": {"seen_count": 12},
+                "vlc": {"seen_count": 1},
+            },
+        }
+        with mock.patch.object(config, "load_state", return_value=fake_state):
+            self.assertEqual(
+                window._sorted_app_names(0), ["warp", "aimp", "vlc"]
+            )
+            self.assertEqual(
+                window._sorted_app_names(1), ["aimp", "vlc", "warp"]
+            )
+            self.assertEqual(
+                window._sorted_app_names(2), ["aimp", "warp", "vlc"]
+            )
+
+    def test_custom_sounds_add_appends_file(self):
+        from notify_sound import gui
+
+        cfg = {"custom_sounds": ["/old.wav"]}
+        window = self._bare_window(cfg)
+        gfile = mock.Mock()
+        gfile.get_path.return_value = "/new.wav"
+        dialog = mock.Mock()
+        dialog.open_finish.return_value = gfile
+        with mock.patch.object(window, "_save") as save, \
+             mock.patch.object(window, "_refresh_custom_list") as refresh, \
+             mock.patch.object(window, "_rebuild_all_dropdowns") as rebuild:
+            gui.NotifyWindow._on_add_custom_done(window, dialog, mock.Mock())
+        save.assert_called_once_with()
+        refresh.assert_called_once_with()
+        rebuild.assert_called_once_with()
+        self.assertIn("/new.wav", cfg["custom_sounds"])
+        self.assertIn("/old.wav", cfg["custom_sounds"])
 
 
 if __name__ == "__main__":

@@ -27,6 +27,7 @@ MAX_CONFIG_BYTES = 1024 * 1024
 MAX_STATE_BYTES = 256 * 1024
 MAX_STATE_APPS = 512
 MAX_APP_NAME_LENGTH = 256
+MAX_SYNONYMS = 64
 MAX_PATH_LENGTH = 4096
 
 AUTOSTART_DESKTOP = """[Desktop Entry]
@@ -102,6 +103,8 @@ def _normalize_app(app):
     normalized = dict(app) if isinstance(app, dict) else {}
     enabled = normalized.get("enabled", True)
     sound = normalized.get("sound")
+    name = normalized.get("name")
+    synonyms = normalized.get("synonyms")
     normalized["enabled"] = enabled if isinstance(enabled, bool) else True
     normalized["sound"] = (
         sound
@@ -109,7 +112,127 @@ def _normalize_app(app):
         or (isinstance(sound, str) and 0 < len(sound) <= MAX_PATH_LENGTH)
         else None
     )
+    if isinstance(name, str) and 0 < len(name) <= MAX_APP_NAME_LENGTH:
+        normalized["name"] = name
+    else:
+        normalized.pop("name", None)
+    seen = set()
+    clean_synonyms = []
+    if isinstance(synonyms, list):
+        for item in synonyms:
+            if (
+                isinstance(item, str)
+                and 0 < len(item) <= MAX_APP_NAME_LENGTH
+                and item not in seen
+            ):
+                seen.add(item)
+                clean_synonyms.append(item)
+            if len(clean_synonyms) >= MAX_SYNONYMS:
+                break
+    if clean_synonyms:
+        normalized["synonyms"] = clean_synonyms
+    else:
+        normalized.pop("synonyms", None)
     return normalized
+
+
+def _find_alias_owner(cfg, alias):
+    """Return the app_name whose cfg entry owns ``alias``.
+
+    An owner is either an entry whose key equals ``alias`` or whose
+    normalized ``name`` equals ``alias``. Returns ``None`` when there is
+    no match or when several entries share the alias (ambiguous).
+    """
+    if not isinstance(alias, str) or not alias:
+        return None
+    apps = cfg.get("apps", {}) if isinstance(cfg, dict) else {}
+    if not isinstance(apps, dict):
+        return None
+    owner = None
+    for app_name, app_cfg in apps.items():
+        if not isinstance(app_name, str) or not isinstance(app_cfg, dict):
+            continue
+        if app_name == alias:
+            if owner is None:
+                owner = app_name
+            else:
+                return None
+        elif app_cfg.get("name") == alias:
+            if owner is None:
+                owner = app_name
+            else:
+                return None
+    return owner
+
+
+def migrate_state_for_config(cfg):
+    """Fuse duplicate aliases and drop synonyms from the seen list.
+
+    Runs on every ``load_config``. State changes (``state.json``) are
+    persisted here; ``True`` is returned only when ``cfg`` itself changed
+    and so the caller should re-save ``config.json``.
+    """
+    if not isinstance(cfg, dict) or not isinstance(cfg.get("apps"), dict):
+        return False
+    apps = cfg["apps"]
+    changed = False
+
+    aliases = {}
+    for app_name, app_cfg in apps.items():
+        if not isinstance(app_cfg, dict):
+            continue
+        alias = app_cfg.get("name")
+        if not isinstance(alias, str) or not alias:
+            continue
+        aliases.setdefault(alias, []).append(app_name)
+
+    for alias, owners in sorted(aliases.items()):
+        if len(owners) <= 1:
+            continue
+        survivor = min(owners)
+        survivor_cfg = apps[survivor]
+        for dup in owners:
+            if dup == survivor:
+                continue
+            dup_cfg = apps.get(dup, {})
+            if dup_cfg.get("enabled") is False:
+                survivor_cfg["enabled"] = False
+            if survivor_cfg.get("sound") is None and dup_cfg.get("sound") is not None:
+                survivor_cfg["sound"] = dup_cfg["sound"]
+            synonyms = list(survivor_cfg.get("synonyms") or [])
+            if dup not in synonyms:
+                synonyms.append(dup)
+            seen = set()
+            clean = []
+            for item in synonyms:
+                if item not in seen and 0 < len(item) <= MAX_APP_NAME_LENGTH:
+                    seen.add(item)
+                    clean.append(item)
+            survivor_cfg["synonyms"] = clean[:MAX_SYNONYMS]
+            del apps[dup]
+            changed = True
+
+    try:
+        state = load_state()
+    except (OSError, ValueError):
+        state = {"apps_seen": []}
+    apps_seen = list(state.get("apps_seen", []))
+    drop = set()
+    for app_name, app_cfg in apps.items():
+        if not isinstance(app_cfg, dict):
+            continue
+        for syn in app_cfg.get("synonyms") or []:
+            if isinstance(syn, str):
+                drop.add(syn)
+    filtered = [name for name in apps_seen if name not in drop]
+    if len(filtered) != len(apps_seen):
+        state["apps_seen"] = filtered
+        try:
+            save_state(state)
+        except OSError:
+            pass
+
+    return changed
 
 
 def load_config():
@@ -168,6 +291,11 @@ def load_config():
             save_config(cfg)
         except OSError:
             pass
+    if migrate_state_for_config(cfg):
+        try:
+            save_config(cfg)
+        except OSError:
+            pass
     return cfg
 
 
@@ -217,7 +345,7 @@ def save_config(cfg):
 def load_state():
     try:
         if os.path.getsize(STATE_FILE) > MAX_STATE_BYTES:
-            return {"apps_seen": []}
+            return {"apps_seen": [], "app_meta": {}}
         with open(STATE_FILE, encoding="utf-8") as f:
             data = json.load(f)
         if isinstance(data, dict) and isinstance(data.get("apps_seen"), list):
@@ -233,8 +361,32 @@ def load_state():
                     apps_seen.append(app_name)
                 if len(apps_seen) >= MAX_STATE_APPS:
                     break
+            app_meta = {}
+            raw_meta = data.get("app_meta")
+            if isinstance(raw_meta, dict):
+                for name, meta in raw_meta.items():
+                    if not isinstance(name, str) or not isinstance(meta, dict):
+                        continue
+                    seen_count = meta.get("seen_count", 0)
+                    last_seen = meta.get("last_seen")
+                    comm = meta.get("comm")
+                    entry = {}
+                    if isinstance(seen_count, int) and seen_count >= 0:
+                        entry["seen_count"] = seen_count
+                    if isinstance(last_seen, (int, float)) and last_seen >= 0:
+                        entry["last_seen"] = last_seen
+                    if (
+                        isinstance(comm, str)
+                        and 0 < len(comm) <= MAX_APP_NAME_LENGTH
+                    ):
+                        entry["comm"] = comm
+                    if entry:
+                        app_meta[name] = entry
+                    if len(app_meta) >= MAX_STATE_APPS:
+                        break
             return {
-                "apps_seen": apps_seen
+                "apps_seen": apps_seen,
+                "app_meta": app_meta,
             }
     except (
         FileNotFoundError,
@@ -243,7 +395,7 @@ def load_state():
         OSError,
     ):
         pass
-    return {"apps_seen": []}
+    return {"apps_seen": [], "app_meta": {}}
 
 
 def save_state(state):
@@ -259,7 +411,30 @@ def save_state(state):
             apps_seen.append(app_name)
         if len(apps_seen) >= MAX_STATE_APPS:
             break
-    _atomic_write(STATE_FILE, json.dumps({"apps_seen": apps_seen}))
+    app_meta = {}
+    raw_meta = state.get("app_meta") if isinstance(state, dict) else None
+    if isinstance(raw_meta, dict):
+        for name, meta in raw_meta.items():
+            if not isinstance(name, str) or not isinstance(meta, dict):
+                continue
+            entry = {}
+            seen_count = meta.get("seen_count", 0)
+            last_seen = meta.get("last_seen")
+            comm = meta.get("comm")
+            if isinstance(seen_count, int) and seen_count >= 0:
+                entry["seen_count"] = seen_count
+            if isinstance(last_seen, (int, float)) and last_seen >= 0:
+                entry["last_seen"] = last_seen
+            if isinstance(comm, str) and 0 < len(comm) <= MAX_APP_NAME_LENGTH:
+                entry["comm"] = comm
+            if entry:
+                app_meta[name] = entry
+            if len(app_meta) >= MAX_STATE_APPS:
+                break
+    _atomic_write(
+        STATE_FILE,
+        json.dumps({"apps_seen": apps_seen, "app_meta": app_meta}),
+    )
 
 
 def is_running():

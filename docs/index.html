@@ -64,7 +64,11 @@
       </div>
       <div class="feature">
         <h3 data-en="Per-app control" data-es="Control por aplicación">Per-app control</h3>
-        <p data-en="Enable/disable each app and give it its own sound. Apps are detected automatically." data-es="Activa/desactiva cada app y dale su propio sonido. Las apps se detectan automáticamente.">Enable/disable each app and give it its own sound. Apps are detected automatically.</p>
+        <p data-en="Enable/disable each app and give it its own sound. Apps are detected automatically and grouped by process (so AIMP shows as one entry, not one per song)." data-es="Activa/desactiva cada app y dale su propio sonido. Las apps se detectan automáticamente y se agrupan por proceso (así AIMP aparece como una sola entrada, no una por canción).">Enable/disable each app and give it its own sound. Apps are detected automatically and grouped by process (so AIMP shows as one entry, not one per song).</p>
+      </div>
+      <div class="feature">
+        <h3 data-en="App aliasing and fusion" data-es="Alias y fusión de apps">App aliasing and fusion</h3>
+        <p data-en="Rename detected apps to a friendly name (&quot;AIMP&quot; instead of a process id). Merge duplicates by renaming them to the same alias; undo from the info popover." data-es="Renombra las apps detectadas a un nombre amigable (&quot;AIMP&quot; en vez de un id de proceso). Fusiona duplicados renombrándolos al mismo alias; deshazlo desde el popover de información.">Rename detected apps to a friendly name (&quot;AIMP&quot; instead of a process id). Merge duplicates by renaming them to the same alias; undo from the info popover.</p>
       </div>
       <div class="feature">
         <h3 data-en="Custom sound files" data-es="Archivos de sonido propios">Custom sound files</h3>
@@ -87,12 +91,10 @@
     <h2><span>03</span><span data-en="Screenshots" data-es="Capturas">Screenshots</span></h2>
     <div class="screenshots">
       <figure class="screenshot">
-        <img src="screenshots/gui-main.png" alt="NotifySound main window">
-        <figcaption data-en="The settings window" data-es="La ventana de ajustes">The settings window</figcaption>
+        <img src="screenshots/gui-1.png" alt="NotifySound settings window" loading="lazy" onclick="openLightbox(this.src)">
       </figure>
       <figure class="screenshot">
-        <img src="screenshots/gui-custom.png" alt="NotifySound with custom sounds">
-        <figcaption data-en="Custom sounds and per-app settings" data-es="Sonidos personalizados y ajustes por app">Custom sounds and per-app settings</figcaption>
+        <img src="screenshots/gui-2.png" alt="NotifySound app management" loading="lazy" onclick="openLightbox(this.src)">
       </figure>
     </div>
   </div>
@@ -103,10 +105,10 @@
     <h2><span>04</span><span data-en="Install" data-es="Instalación">Install</span></h2>
     <p data-en="Ubuntu / Debian package (recommended):" data-es="Paquete para Ubuntu / Debian (recomendado):">Ubuntu / Debian package (recommended):</p>
     <div class="install-actions">
-      <a class="btn primary small" href="https://github.com/ChristianM023/notify-sound/releases/download/v0.1.7/notify-sound_0.1.7_all.deb" target="_blank" rel="noopener" data-en="Download .deb" data-es="Descargar .deb">Download .deb</a>
-      <a class="btn secondary small" href="https://github.com/ChristianM023/notify-sound/releases/download/v0.1.7/notify-sound_0.1.7_all.deb.sha256" target="_blank" rel="noopener" data-en="SHA-256 checksum" data-es="Checksum SHA-256">SHA-256 checksum</a>
+      <a class="btn primary small" href="https://github.com/ChristianM023/notify-sound/releases/download/v0.1.10/notify-sound_0.1.10_all.deb" target="_blank" rel="noopener" data-en="Download .deb" data-es="Descargar .deb">Download .deb</a>
+      <a class="btn secondary small" href="https://github.com/ChristianM023/notify-sound/releases/download/v0.1.10/notify-sound_0.1.10_all.deb.sha256" target="_blank" rel="noopener" data-en="SHA-256 checksum" data-es="Checksum SHA-256">SHA-256 checksum</a>
     </div>
-    <pre><code>sudo dpkg -i ./notify-sound_0.1.7_all.deb
+    <pre><code>sudo dpkg -i ./notify-sound_0.1.10_all.deb
 sudo apt-get -f install</code></pre>
     <p data-en="Or install per-user from source (no sudo):" data-es="O instala por usuario desde fuente (sin sudo):">Or install per-user from source (no sudo):</p>
     <p data-en="Ubuntu / Debian dependencies:" data-es="Dependencias de Ubuntu / Debian:">Ubuntu / Debian dependencies:</p>
@@ -163,6 +165,24 @@ notify-sound --quit     # stop the daemon</code></pre>
     <p><a href="https://github.com/ChristianM023/notify-sound" target="_blank" rel="noopener">github.com/ChristianM023/notify-sound</a></p>
   </div>
 </footer>
+
+<div id="lightbox" class="lightbox" onclick="closeLightbox()">
+  <img id="lightbox-img" src="" alt="">
+</div>
+
+<script>
+function openLightbox(src) {
+  var lb = document.getElementById('lightbox');
+  document.getElementById('lightbox-img').src = src;
+  lb.classList.add('active');
+}
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('active');
+}
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') closeLightbox();
+});
+</script>
 
 <script>
 (function () {
