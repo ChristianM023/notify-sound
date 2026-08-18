@@ -696,6 +696,20 @@ class DaemonTests(ConfigTests):
             "notify-send", config.load_state()["apps_seen"]
         )
 
+    def test_record_app_persists_seen_count_on_every_notification(self):
+        instance, monitor = self.make_daemon(
+            notification("notify-send", trailing_blank=False)
+        )
+        instance._record_app("notify-send")
+        first_seen = config.load_state()["app_meta"]["notify-send"]["last_seen"]
+        self.assertEqual(
+            config.load_state()["app_meta"]["notify-send"]["seen_count"], 1
+        )
+        instance._record_app("notify-send")
+        meta = config.load_state()["app_meta"]["notify-send"]
+        self.assertEqual(meta["seen_count"], 2)
+        self.assertGreaterEqual(meta["last_seen"], first_seen)
+
     def test_gtk_string_content_cannot_fake_array_end(self):
         instance, monitor = self.make_daemon(
             gtk_notification(
@@ -1532,6 +1546,101 @@ class GuiTests(unittest.TestCase):
         self.assertEqual(model_arg.get_string(1), "message")
         self.assertEqual(model_arg.get_string(2), "bell")
         dropdown.set_selected.assert_called_once_with(0)
+
+    def test_app_row_label_uses_width_chars_and_icon_play(self):
+        from notify_sound import gui
+
+        cfg = {"apps": {"warp": {"enabled": True, "sound": None}}}
+        window = self._bare_window(cfg)
+        window.theme_ids = ["message"]
+        window.apps_list = mock.Mock()
+        captured = {}
+
+        original_label = gui.Gtk.Label
+
+        class SpyLabel(original_label):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self._spy_width = None
+                self._spy_max_width = None
+
+            def set_width_chars(self, n):
+                self._spy_width = n
+                super().set_width_chars(n)
+
+            def set_max_width_chars(self, n):
+                self._spy_max_width = n
+                super().set_max_width_chars(n)
+
+        class SpyButton(gui.Gtk.Button):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self._spy_icon = None
+
+            def set_icon_name(self, name):
+                self._spy_icon = name
+                super().set_icon_name(name)
+
+        with mock.patch.object(gui.Gtk, "Label", SpyLabel), \
+             mock.patch.object(gui.Gtk, "Button", SpyButton):
+            window._ensure_app_row("warp")
+
+        entry = window.app_rows["warp"]
+        label = entry["name_label"]
+        self.assertEqual(label._spy_width, 28)
+        self.assertEqual(label._spy_max_width, 50)
+
+    def test_sort_apps_by_name_and_by_count(self):
+        from notify_sound import gui
+
+        cfg = {
+            "apps": {
+                "warp": {"enabled": True, "sound": None},
+                "aimp": {"enabled": True, "sound": None, "name": "AIMP"},
+                "vlc": {"enabled": True, "sound": None},
+            }
+        }
+        window = self._bare_window(cfg)
+        fake_state = {
+            "apps_seen": ["warp", "aimp", "vlc"],
+            "app_meta": {
+                "warp": {"seen_count": 5},
+                "aimp": {"seen_count": 12},
+                "vlc": {"seen_count": 1},
+            },
+        }
+        with mock.patch.object(config, "load_state", return_value=fake_state):
+            self.assertEqual(
+                window._sorted_app_names(0), ["warp", "aimp", "vlc"]
+            )
+            self.assertEqual(
+                window._sorted_app_names(1), ["aimp", "vlc", "warp"]
+            )
+            self.assertEqual(
+                window._sorted_app_names(2), ["aimp", "warp", "vlc"]
+            )
+
+    def test_custom_sounds_multi_add_appends_all(self):
+        from notify_sound import gui
+
+        cfg = {"custom_sounds": ["/old.wav"]}
+        window = self._bare_window(cfg)
+        gfile_a = mock.Mock()
+        gfile_a.get_path.return_value = "/new1.wav"
+        gfile_b = mock.Mock()
+        gfile_b.get_path.return_value = "/new2.wav"
+        dialog = mock.Mock()
+        dialog.open_multiple_finish.return_value = [gfile_a, gfile_b]
+        with mock.patch.object(window, "_save") as save, \
+             mock.patch.object(window, "_refresh_custom_list") as refresh, \
+             mock.patch.object(window, "_rebuild_all_dropdowns") as rebuild:
+            gui.NotifyWindow._on_add_custom_done(window, dialog, mock.Mock())
+        save.assert_called_once_with()
+        refresh.assert_called_once_with()
+        rebuild.assert_called_once_with()
+        self.assertIn("/new1.wav", cfg["custom_sounds"])
+        self.assertIn("/new2.wav", cfg["custom_sounds"])
+        self.assertIn("/old.wav", cfg["custom_sounds"])
 
 
 if __name__ == "__main__":

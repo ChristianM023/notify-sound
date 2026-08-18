@@ -315,6 +315,17 @@ asserts on what would be played/skipped. Add a test for every new behavior.
 
 ## Changelog
 
+- **0.1.10** — fix app-info counters and timestamps not updating after
+  the first notification (the daemon now persists `seen_count`/`last_seen`
+  on every `_record_app`); fix long app names being cut to ~15 chars by
+  widening the window to 720px, giving the name label a 28-char minimum,
+  and compacting the per-row **Probar** button into a play icon with
+  tooltip. GUI improvements: custom sounds list is now capped to ~3 rows
+  with its own scroll (so it no longer steals vertical space from the
+  apps list); app list can be sorted by arrival (default), by name, or
+  by notification count via a new dropdown in the "Aplicaciones" header;
+  the daemon status label moved next to the Start/Stop buttons; the
+  custom-sound file dialog accepts multiple files at once.
 - **0.1.9** — auto-consolidate apps like AIMP that send the song title as
   `app_name` and no `desktop-entry` hint: the daemon now resolves the D-Bus
   `sender` connection to a PID (`dbus-send

@@ -506,12 +506,9 @@ class NotifyDaemon:
             cached = dict(self._meta_cache.get(app_name, {}))
             cached["seen_count"] = int(cached.get("seen_count", 0)) + 1
             cached["last_seen"] = time.time()
-            comm_changed = bool(comm) and cached.get("comm") != comm
             if comm:
                 cached["comm"] = comm
             self._meta_cache[app_name] = cached
-            if not is_new and not comm_changed:
-                return
             state = config.load_state()
             apps_seen = list(state.get("apps_seen", []))
             if is_new and app_name not in apps_seen:

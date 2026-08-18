@@ -39,7 +39,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
         super().__init__(
             application=app, title="NotifySound",
-            default_width=580, default_height=680,
+            default_width=720, default_height=680,
         )
         self.cfg = config.load_config()
         self.theme_ids = sorted(sounds.list_sounds().keys())
@@ -48,6 +48,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
         self.app_rows = {}
         self.custom_rows = {}
         self._rebuilding = False
+        self.sort_dropdown = None
         self._build_ui()
         GLib.timeout_add(STATE_INTERVAL_MS, self._refresh_state)
 
@@ -123,7 +124,13 @@ class NotifyWindow(Gtk.ApplicationWindow):
 
         self.custom_box = Gtk.ListBox()
         self.custom_box.set_selection_mode(Gtk.SelectionMode.NONE)
-        root.append(self.custom_box)
+        custom_scroll = Gtk.ScrolledWindow(
+            vexpand=False, hscrollbar_policy=Gtk.PolicyType.NEVER,
+        )
+        custom_scroll.set_max_content_height(110)
+        custom_scroll.set_propagate_natural_height(False)
+        custom_scroll.set_child(self.custom_box)
+        root.append(custom_scroll)
 
         self.no_dup_check = Gtk.CheckButton(
             label="No repetir si la app ya envía su propio sonido "
@@ -147,7 +154,19 @@ class NotifyWindow(Gtk.ApplicationWindow):
         )
         self.reset_apps_button.props.valign = Gtk.Align.CENTER
         self.reset_apps_button.connect("clicked", self._on_reset_apps)
+        sort_label = Gtk.Label(label="Orden:", xalign=0)
+        self.sort_dropdown = Gtk.DropDown(
+            model=Gtk.StringList.new(
+                ["Por llegada", "Por nombre", "Por notificaciones"]
+            )
+        )
+        self.sort_dropdown.props.valign = Gtk.Align.CENTER
+        self.sort_dropdown.connect(
+            "notify::selected", self._on_sort_changed
+        )
         apps_header_row.append(apps_header)
+        apps_header_row.append(sort_label)
+        apps_header_row.append(self.sort_dropdown)
         apps_header_row.append(self.reset_apps_button)
         root.append(apps_header_row)
 
@@ -157,17 +176,15 @@ class NotifyWindow(Gtk.ApplicationWindow):
         scroll.set_child(self.apps_list)
         root.append(scroll)
 
-        self.state_label = Gtk.Label(label="", xalign=0, wrap=True)
-        root.append(self.state_label)
-
         daemon_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         self.start_button = Gtk.Button(label="Iniciar daemon")
         self.start_button.connect("clicked", self._on_start_daemon)
         self.stop_button = Gtk.Button(label="Detener daemon")
         self.stop_button.connect("clicked", self._on_stop_daemon)
+        self.state_label = Gtk.Label(label="", xalign=0, hexpand=True)
         daemon_row.append(self.start_button)
         daemon_row.append(self.stop_button)
-        daemon_row.append(Gtk.Label(label="", hexpand=True))
+        daemon_row.append(self.state_label)
         root.append(daemon_row)
 
         self._populate_apps()
@@ -179,6 +196,33 @@ class NotifyWindow(Gtk.ApplicationWindow):
         for app_name in seen:
             self._ensure_app_row(app_name)
         self._refresh_app_sensitivity()
+
+    def _on_sort_changed(self, dropdown, param):
+        self._reorder_apps(dropdown.get_selected())
+
+    def _reorder_apps(self, sort_mode):
+        ordered = self._sorted_app_names(sort_mode)
+        for app_name in ordered:
+            entry = self.app_rows.get(app_name)
+            if entry is None:
+                continue
+            self.apps_list.remove(entry["row"])
+            self.apps_list.append(entry["row"])
+
+    def _sorted_app_names(self, sort_mode):
+        seen = config.load_state().get("apps_seen", [])
+        if sort_mode == 1:
+            return sorted(seen, key=self._sort_key_name)
+        if sort_mode == 2:
+            return sorted(seen, key=self._sort_key_count, reverse=True)
+        return list(seen)
+
+    def _sort_key_name(self, app_name):
+        return (self._display_name(app_name).lower(), app_name)
+
+    def _sort_key_count(self, app_name):
+        meta = config.load_state().get("app_meta", {}).get(app_name, {})
+        return (meta.get("seen_count", 0), app_name)
 
     def _ensure_app_row(self, app_name):
         if app_name in self.app_rows:
@@ -195,13 +239,16 @@ class NotifyWindow(Gtk.ApplicationWindow):
             ellipsize=Pango.EllipsizeMode.END,
             tooltip_text=app_name,
         )
-        name_label.set_max_width_chars(40)
+        name_label.set_width_chars(28)
+        name_label.set_max_width_chars(50)
         app_sound_dropdown = Gtk.DropDown()
         app_sound_dropdown.props.valign = Gtk.Align.CENTER
         app_sound_dropdown.connect(
             "notify::selected", self._on_app_sound_changed, app_name
         )
-        app_test_button = Gtk.Button(label="Probar")
+        app_test_button = Gtk.Button()
+        app_test_button.set_icon_name("media-playback-start-symbolic")
+        app_test_button.set_tooltip_text("Probar")
         app_test_button.props.valign = Gtk.Align.CENTER
         app_test_button.connect("clicked", self._on_test_app, app_name)
         rename_button = Gtk.Button()
@@ -637,8 +684,13 @@ class NotifyWindow(Gtk.ApplicationWindow):
     def _refresh_state(self):
         running = config.is_running()
         state = config.load_state()
+        added = False
         for app_name in state.get("apps_seen", []):
-            self._ensure_app_row(app_name)
+            if app_name not in self.app_rows:
+                self._ensure_app_row(app_name)
+                added = True
+        if added and self.sort_dropdown is not None:
+            self._reorder_apps(self.sort_dropdown.get_selected())
         self.state_label.set_text(
             "Daemon: en ejecución" if running else "Daemon: detenido"
         )
@@ -683,16 +735,23 @@ class NotifyWindow(Gtk.ApplicationWindow):
         audio_filter.set_name("Audio")
         audio_filter.add_mime_type("audio/*")
         dialog.set_default_filter(audio_filter)
-        dialog.open(self, None, self._on_add_custom_done)
+        dialog.set_select_multiple(True)
+        dialog.open_multiple(self, None, self._on_add_custom_done)
 
     def _on_add_custom_done(self, dialog, result):
         try:
-            gfile = dialog.open_finish(result)
+            files = dialog.open_multiple_finish(result)
         except GLib.Error:
             return
-        path = gfile.get_path()
-        if path and path not in self.cfg.get("custom_sounds", []):
-            self.cfg.setdefault("custom_sounds", []).append(path)
+        existing = set(self.cfg.get("custom_sounds", []))
+        changed = False
+        for gfile in files:
+            path = gfile.get_path()
+            if path and path not in existing:
+                self.cfg.setdefault("custom_sounds", []).append(path)
+                existing.add(path)
+                changed = True
+        if changed:
             self._save()
             self._refresh_custom_list()
             self._rebuild_all_dropdowns()
