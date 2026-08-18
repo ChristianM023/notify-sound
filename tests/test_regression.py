@@ -1566,11 +1566,15 @@ class GuiTests(unittest.TestCase):
     def test_app_row_label_uses_width_chars_and_icon_play(self):
         from notify_sound import gui
 
+        if not os.environ.get("DISPLAY") and not os.environ.get(
+            "WAYLAND_DISPLAY"
+        ):
+            self.skipTest("requires a display to instantiate GTK widgets")
+
         cfg = {"apps": {"warp": {"enabled": True, "sound": None}}}
         window = self._bare_window(cfg)
         window.theme_ids = ["message"]
         window.apps_list = mock.Mock()
-        captured = {}
 
         original_label = gui.Gtk.Label
 
