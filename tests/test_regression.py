@@ -1636,20 +1636,15 @@ class GuiTests(unittest.TestCase):
                 window._sorted_app_names(2), ["aimp", "warp", "vlc"]
             )
 
-    def test_custom_sounds_multi_add_appends_all(self):
+    def test_custom_sounds_add_appends_file(self):
         from notify_sound import gui
 
         cfg = {"custom_sounds": ["/old.wav"]}
         window = self._bare_window(cfg)
-        gfile_a = mock.Mock()
-        gfile_a.get_path.return_value = "/new1.wav"
-        gfile_b = mock.Mock()
-        gfile_b.get_path.return_value = "/new2.wav"
-        files = mock.Mock()
-        files.get_n_items.return_value = 2
-        files.get_item.side_effect = [gfile_a, gfile_b]
+        gfile = mock.Mock()
+        gfile.get_path.return_value = "/new.wav"
         dialog = mock.Mock()
-        dialog.open_multiple_finish.return_value = files
+        dialog.open_finish.return_value = gfile
         with mock.patch.object(window, "_save") as save, \
              mock.patch.object(window, "_refresh_custom_list") as refresh, \
              mock.patch.object(window, "_rebuild_all_dropdowns") as rebuild:
@@ -1657,8 +1652,7 @@ class GuiTests(unittest.TestCase):
         save.assert_called_once_with()
         refresh.assert_called_once_with()
         rebuild.assert_called_once_with()
-        self.assertIn("/new1.wav", cfg["custom_sounds"])
-        self.assertIn("/new2.wav", cfg["custom_sounds"])
+        self.assertIn("/new.wav", cfg["custom_sounds"])
         self.assertIn("/old.wav", cfg["custom_sounds"])
 
 

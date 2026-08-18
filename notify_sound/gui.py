@@ -736,28 +736,18 @@ class NotifyWindow(Gtk.ApplicationWindow):
         audio_filter.set_name("Audio")
         audio_filter.add_mime_type("audio/*")
         dialog.set_default_filter(audio_filter)
-        dialog.set_select_multiple(True)
-        dialog.open_multiple(self, None, self._on_add_custom_done)
+        dialog.open(self, None, self._on_add_custom_done)
 
     def _on_add_custom_done(self, dialog, result):
         try:
-            files = dialog.open_multiple_finish(result)
+            gfile = dialog.open_finish(result)
         except GLib.Error:
             return
-        if files is None:
+        if gfile is None:
             return
-        existing = set(self.cfg.get("custom_sounds", []))
-        changed = False
-        for index in range(files.get_n_items()):
-            gfile = files.get_item(index)
-            if gfile is None:
-                continue
-            path = gfile.get_path()
-            if path and path not in existing:
-                self.cfg.setdefault("custom_sounds", []).append(path)
-                existing.add(path)
-                changed = True
-        if changed:
+        path = gfile.get_path()
+        if path and path not in self.cfg.get("custom_sounds", []):
+            self.cfg.setdefault("custom_sounds", []).append(path)
             self._save()
             self._refresh_custom_list()
             self._rebuild_all_dropdowns()
