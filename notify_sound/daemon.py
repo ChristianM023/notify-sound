@@ -25,11 +25,102 @@ _MESSAGE_HEADER_RE = re.compile(
     r"^(?:method call|signal|method return|error)\b"
 )
 _TOP_LEVEL_INT32_RE = re.compile(r"^ {3}int32[ \t]+[-+]?\d+[ \t]*$")
+_SENDER_RE = re.compile(r"\bsender=(:[0-9]+\.[0-9]+)")
+_SENDER_VALUE_RE = re.compile(r"^:[0-9]+\.[0-9]+$")
+_DBUS_PID_RE = re.compile(r"^\s*uint32\s+(\d+)\s*$")
 _RETRY_INITIAL_MS = 1000
 _RETRY_MAX_MS = 30000
 _MONITOR_STABLE_SECONDS = 5
 _MAX_BLOCK_BYTES = 1024 * 1024
 _MAX_BLOCK_LINES = 4096
+_SENDER_CACHE_TTL_SECONDS = 300
+_GENERIC_COMMS = {
+    "python3", "python", "python2", "sh", "bash", "dash", "csh", "zsh",
+    "dbus-monitor", "dbus-daemon",
+}
+
+_sender_cache = {}
+
+
+def _parse_sender(lines):
+    if not lines:
+        return None
+    match = _SENDER_RE.search(lines[0])
+    return match.group(1) if match else None
+
+
+def _query_connection_pid(sender):
+    try:
+        result = subprocess.run(
+            [
+                "dbus-send", "--session", "--print-reply",
+                "--dest=org.freedesktop.DBus", "/org/freedesktop/DBus",
+                "org.freedesktop.DBus.GetConnectionUnixProcessID",
+                f"string:{sender}",
+            ],
+            capture_output=True, text=True, timeout=2,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError, OSError):
+        return None
+    for line in result.stdout.splitlines():
+        match = _DBUS_PID_RE.match(line)
+        if match:
+            try:
+                return int(match.group(1))
+            except ValueError:
+                return None
+    return None
+
+
+def _read_proc_comm(pid):
+    try:
+        with open(f"/proc/{pid}/comm", encoding="utf-8") as handle:
+            return handle.read().strip() or None
+    except (OSError, ValueError):
+        return None
+
+
+def _read_proc_cmdline_name(pid):
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as handle:
+            parts = handle.read().split(b"\0")
+    except (OSError, ValueError):
+        return None
+    for part in parts:
+        if not part:
+            continue
+        try:
+            name = os.path.basename(part.decode(errors="replace"))
+        except (OSError, ValueError):
+            continue
+        if name and name not in _GENERIC_COMMS and not name.startswith("python"):
+            base = os.path.splitext(name)[0]
+            if base and 0 < len(base) <= config.MAX_APP_NAME_LENGTH:
+                return base
+    return None
+
+
+def _resolve_sender_to_comm(sender):
+    if not sender or not _SENDER_VALUE_RE.fullmatch(sender):
+        return None
+    now = time.monotonic()
+    cached = _sender_cache.get(sender)
+    if cached and now - cached[0] < _SENDER_CACHE_TTL_SECONDS:
+        return cached[1]
+    pid = _query_connection_pid(sender)
+    comm = _read_proc_comm(pid) if pid else None
+    if not comm or comm in _GENERIC_COMMS:
+        cmdline_name = _read_proc_cmdline_name(pid) if pid else None
+        if cmdline_name:
+            comm = cmdline_name
+    if comm and (
+        not isinstance(comm, str)
+        or not (0 < len(comm) <= config.MAX_APP_NAME_LENGTH)
+        or comm in _GENERIC_COMMS
+    ):
+        comm = None
+    _sender_cache[sender] = (now, comm)
+    return comm
 
 
 def _scan_line(text, in_string=False, escaped=False):
@@ -60,10 +151,22 @@ def _scan_line(text, in_string=False, escaped=False):
 
 
 def _dbus_tokens(lines):
-    """Yield structural dict markers and decoded dbus-monitor strings."""
+    """Yield structural dict markers and decoded dbus-monitor strings.
+
+    Tokens emitted:
+      ("dict", None)                 -- start of a dict entry (a hint pair)
+      ("string", value)              -- a bare ``string "..."`` argument
+      ("variant_string", value)       -- a ``variant string "..."`` argument
+      ("variant_array_string", value) -- a ``variant array string "..."`` item
+
+    The variant tokens let callers read hint *values* (e.g. the
+    ``desktop-entry`` hint) without re-introducing column/blank-line based
+    framing: quoted content is still tracked with the same state machine.
+    """
     in_string = False
     escaped = False
     value = []
+    _pending_string_kind = None
     index = 0
     while index < len(lines):
         line = lines[index]
@@ -85,7 +188,7 @@ def _dbus_tokens(lines):
                 elif char == "\\":
                     escaped = True
                 elif char == '"':
-                    yield "string", "".join(value)
+                    yield _pending_string_kind, "".join(value)
                     value = []
                     in_string = False
                 else:
@@ -95,8 +198,17 @@ def _dbus_tokens(lines):
             if line.startswith("dict entry(", position):
                 yield "dict", None
                 position += len("dict entry(")
+            elif line.startswith('variant array string "', position):
+                in_string = True
+                _pending_string_kind = "variant_array_string"
+                position += len('variant array string "')
+            elif line.startswith('variant string "', position):
+                in_string = True
+                _pending_string_kind = "variant_string"
+                position += len('variant string "')
             elif line.startswith('string "', position):
                 in_string = True
+                _pending_string_kind = "string"
                 position += len('string "')
             else:
                 position += 1
@@ -106,24 +218,33 @@ def _dbus_tokens(lines):
 def _parse_block(lines):
     app_name = None
     hints = set()
+    hint_key = None
+    desktop_entry = None
     expecting_hint = False
     for token_type, value in _dbus_tokens(lines):
         if token_type == "dict":
             expecting_hint = True
+            hint_key = None
         elif token_type == "string":
             if app_name is None:
                 app_name = value
-            elif expecting_hint:
+            elif expecting_hint and hint_key is None:
+                hint_key = value
                 hints.add(value)
-                expecting_hint = False
-    return app_name, hints
+        elif token_type == "variant_string" and expecting_hint and hint_key == "desktop-entry":
+            if desktop_entry is None:
+                desktop_entry = value
+            expecting_hint = False
+    return app_name, hints, desktop_entry
 
 
 class NotifyDaemon:
     def __init__(self):
         self.loop = GLib.MainLoop()
         self.monitor = None
-        self.seen = set(config.load_state().get("apps_seen", []))
+        initial_state = config.load_state()
+        self.seen = set(initial_state.get("apps_seen", []))
+        self._meta_cache = dict(initial_state.get("app_meta", {}))
         self.lock = threading.Lock()
         self.monitor_lock = threading.Lock()
         self.stopping = False
@@ -131,6 +252,32 @@ class NotifyDaemon:
         self.restart_pending = False
         self.retry_delay_ms = _RETRY_INITIAL_MS
         self.monitor_started_at = None
+        self._state_mtime = 0.0
+        self._sync_seen_with_state()
+
+    def _sync_seen_with_state(self):
+        """Reconcile the in-memory ``seen`` set with persisted state.
+
+        Cheap: only touches disk when ``state.json`` mtime changed since
+        the last call. After the GUI clears/resets the list, this drops
+        from ``self.seen`` anything no longer in ``apps_seen`` so the
+        next notification for that app is treated as new again.
+        """
+        try:
+            mtime = os.path.getmtime(config.STATE_FILE)
+        except OSError:
+            return
+        if mtime == self._state_mtime:
+            return
+        self._state_mtime = mtime
+        try:
+            state = config.load_state()
+        except (OSError, ValueError):
+            return
+        persisted = set(state.get("apps_seen", []))
+        with self.lock:
+            self.seen &= persisted
+            self._meta_cache = dict(state.get("app_meta", {}))
 
     def _start_monitor(self):
         with self.monitor_lock:
@@ -302,30 +449,84 @@ class NotifyDaemon:
                 self._schedule_monitor_restart()
 
     def _handle_block(self, lines):
-        app_name, hints = _parse_block(lines)
-        if not app_name or len(app_name) > config.MAX_APP_NAME_LENGTH:
-            return
+        app_name, hints, desktop_entry = _parse_block(lines)
         if "x-shell-sender" in hints:
             return
-        self._record_app(app_name)
-        self._maybe_play(app_name, hints)
+        cfg = config.load_config()
+        canonical = None
+        comm = None
+        if (
+            desktop_entry
+            and isinstance(desktop_entry, str)
+            and 0 < len(desktop_entry) <= config.MAX_APP_NAME_LENGTH
+        ):
+            canonical = desktop_entry
+        else:
+            sender = _parse_sender(lines)
+            comm = _resolve_sender_to_comm(sender) if sender else None
+            if (
+                comm
+                and isinstance(comm, str)
+                and 0 < len(comm) <= config.MAX_APP_NAME_LENGTH
+            ):
+                canonical = comm
+        if not canonical and app_name:
+            synonym_owner = self._find_synonym_owner(cfg, app_name)
+            if synonym_owner and isinstance(synonym_owner, str):
+                canonical = synonym_owner
+            elif len(app_name) <= config.MAX_APP_NAME_LENGTH:
+                canonical = app_name
+        if not canonical:
+            return
+        self._record_app(canonical, comm)
+        self._maybe_play(canonical, hints, cfg)
 
-    def _record_app(self, app_name):
+    @staticmethod
+    def _find_synonym_owner(cfg, app_name):
+        apps = cfg.get("apps", {}) if isinstance(cfg, dict) else {}
+        if not isinstance(apps, dict):
+            return None
+        for owner, app_cfg in apps.items():
+            if not isinstance(app_cfg, dict):
+                continue
+            if app_name in (app_cfg.get("synonyms") or []):
+                return owner
+        return None
+
+    def _record_app(self, app_name, comm=None):
         if not app_name:
             return
+        self._sync_seen_with_state()
         with self.lock:
-            if app_name not in self.seen:
-                if len(self.seen) >= config.MAX_STATE_APPS:
-                    return
+            is_new = app_name not in self.seen
+            if is_new and len(self.seen) >= config.MAX_STATE_APPS:
+                return
+            if is_new:
                 self.seen.add(app_name)
-                state = config.load_state()
-                merged = sorted(set(state.get("apps_seen", [])) | self.seen)
-                config.save_state({"apps_seen": merged})
+            cached = dict(self._meta_cache.get(app_name, {}))
+            cached["seen_count"] = int(cached.get("seen_count", 0)) + 1
+            cached["last_seen"] = time.time()
+            comm_changed = bool(comm) and cached.get("comm") != comm
+            if comm:
+                cached["comm"] = comm
+            self._meta_cache[app_name] = cached
+            if not is_new and not comm_changed:
+                return
+            state = config.load_state()
+            apps_seen = list(state.get("apps_seen", []))
+            if is_new and app_name not in apps_seen:
+                apps_seen.append(app_name)
+            app_meta = dict(state.get("app_meta", {}))
+            app_meta[app_name] = cached
+            config.save_state(
+                {"apps_seen": apps_seen, "app_meta": app_meta}
+            )
 
-    def _maybe_play(self, app_name, hints):
+    def _maybe_play(self, app_name, hints, cfg=None):
         if "suppress-sound" in hints:
             return
-        cfg = config.load_config()
+        if cfg is None:
+            cfg = config.load_config()
         if not cfg.get("enabled", True):
             return
         apps = cfg.get("apps", {})

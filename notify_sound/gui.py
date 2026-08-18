@@ -1,11 +1,13 @@
 import os
 import subprocess
 import sys
+from datetime import datetime
 
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import GLib, Gtk
+gi.require_version("Pango", "1.0")
+from gi.repository import GLib, Gtk, Pango
 
 from . import config, player, sounds
 
@@ -77,6 +79,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
         master_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         master_label = Gtk.Label(label="Sonido de notificaciones", hexpand=True, xalign=0)
         self.master_switch = Gtk.Switch(active=bool(self.cfg.get("enabled", True)))
+        self.master_switch.props.valign = Gtk.Align.CENTER
         self.master_switch.connect("notify::active", self._on_master_toggled)
         master_row.append(master_label)
         master_row.append(self.master_switch)
@@ -89,6 +92,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
         self.autostart_switch = Gtk.Switch(
             active=bool(config.autostart_enabled())
         )
+        self.autostart_switch.props.valign = Gtk.Align.CENTER
         self.autostart_switch.connect(
             "notify::active", self._on_autostart_toggled
         )
@@ -132,9 +136,20 @@ class NotifyWindow(Gtk.ApplicationWindow):
         separator = Gtk.Separator()
         root.append(separator)
 
+        apps_header_row = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=10
+        )
         apps_header = Gtk.Label(label="Aplicaciones", xalign=0, hexpand=True)
         apps_header.add_css_class("heading")
-        root.append(apps_header)
+        self.reset_apps_button = Gtk.Button(label="Vaciar lista")
+        self.reset_apps_button.set_tooltip_text(
+            "Borra todas las apps detectadas y su configuración"
+        )
+        self.reset_apps_button.props.valign = Gtk.Align.CENTER
+        self.reset_apps_button.connect("clicked", self._on_reset_apps)
+        apps_header_row.append(apps_header)
+        apps_header_row.append(self.reset_apps_button)
+        root.append(apps_header_row)
 
         scroll = Gtk.ScrolledWindow(vexpand=True)
         self.apps_list = Gtk.ListBox()
@@ -174,26 +189,400 @@ class NotifyWindow(Gtk.ApplicationWindow):
             orientation=Gtk.Orientation.HORIZONTAL, spacing=10,
             margin_top=4, margin_bottom=4,
         )
-        name_label = Gtk.Label(label=app_name, hexpand=True, xalign=0)
+        name_label = Gtk.Label(
+            label=self._display_name(app_name),
+            hexpand=True, xalign=0,
+            ellipsize=Pango.EllipsizeMode.END,
+            tooltip_text=app_name,
+        )
+        name_label.set_max_width_chars(40)
         app_sound_dropdown = Gtk.DropDown()
+        app_sound_dropdown.props.valign = Gtk.Align.CENTER
         app_sound_dropdown.connect(
             "notify::selected", self._on_app_sound_changed, app_name
         )
         app_test_button = Gtk.Button(label="Probar")
+        app_test_button.props.valign = Gtk.Align.CENTER
         app_test_button.connect("clicked", self._on_test_app, app_name)
+        rename_button = Gtk.Button()
+        rename_button.set_icon_name("document-edit-symbolic")
+        rename_button.set_tooltip_text("Renombrar")
+        rename_button.props.valign = Gtk.Align.CENTER
+        rename_button.connect("clicked", self._on_app_rename, app_name)
+        info_button = Gtk.Button()
+        info_button.set_icon_name("dialog-information-symbolic")
+        info_button.set_tooltip_text("Información")
+        info_button.props.valign = Gtk.Align.CENTER
+        info_button.connect("clicked", self._on_app_info, app_name)
         app_switch = Gtk.Switch(active=bool(app_cfg.get("enabled", True)))
+        app_switch.props.valign = Gtk.Align.CENTER
         app_switch.connect("notify::active", self._on_app_toggled, app_name)
+        remove_button = Gtk.Button()
+        remove_button.set_icon_name("user-trash-symbolic")
+        remove_button.set_tooltip_text("Eliminar de la lista")
+        remove_button.props.valign = Gtk.Align.CENTER
+        remove_button.connect("clicked", self._on_app_remove, app_name)
         box.append(name_label)
         box.append(app_sound_dropdown)
         box.append(app_test_button)
+        box.append(rename_button)
+        box.append(info_button)
         box.append(app_switch)
+        box.append(remove_button)
         row.set_child(box)
         self.apps_list.append(row)
         self.app_rows[app_name] = {
             "row": row,
             "switch": app_switch,
             "dropdown": app_sound_dropdown,
+            "name_label": name_label,
         }
+        self._populate_app_dropdown(app_name, self.app_rows[app_name])
+
+    def _populate_app_dropdown(self, app_name, entry):
+        displays = [display for display, _ in self._choices()]
+        previous = self._rebuilding
+        self._rebuilding = True
+        try:
+            entry["dropdown"].set_model(
+                Gtk.StringList.new([INHERITED] + displays)
+            )
+            app_sound = self.cfg.get("apps", {}).get(app_name, {}).get("sound")
+            app_index = self._choice_index(app_sound)
+            entry["dropdown"].set_selected(
+                0 if app_index is None else app_index + 1
+            )
+        finally:
+            self._rebuilding = previous
+
+    def _display_name(self, app_name):
+        name = self.cfg.get("apps", {}).get(app_name, {}).get("name")
+        if isinstance(name, str) and name:
+            return name
+        return app_name
+
+    def _on_app_rename(self, button, app_name):
+        entry_store = self.app_rows[app_name]
+        popover = entry_store.get("rename_popover")
+        if popover is None:
+            popover = Gtk.Popover()
+            content = Gtk.Box(
+                orientation=Gtk.Orientation.VERTICAL, spacing=8,
+                margin_top=8, margin_bottom=8, margin_start=8, margin_end=8,
+            )
+            text_entry = Gtk.Entry(
+                max_length=config.MAX_APP_NAME_LENGTH, width_chars=28,
+            )
+            actions = Gtk.Box(
+                orientation=Gtk.Orientation.HORIZONTAL, spacing=8, halign=Gtk.Align.END,
+            )
+            save_button = Gtk.Button(label="Guardar")
+            reset_button = Gtk.Button(label="Restablecer")
+            save_button.connect(
+                "clicked", self._on_app_rename_save, app_name, text_entry, popover
+            )
+            reset_button.connect(
+                "clicked", self._on_app_rename_reset, app_name, popover
+            )
+            actions.append(reset_button)
+            actions.append(save_button)
+            content.append(text_entry)
+            content.append(actions)
+            popover.set_child(content)
+            popover.set_parent(button)
+            entry_store["rename_popover"] = popover
+            entry_store["rename_entry"] = text_entry
+        entry_store["rename_entry"].set_text(self._display_name(app_name))
+        popover.popup()
+
+    def _on_app_rename_save(self, button, app_name, entry, popover):
+        new_name = entry.get_text().strip()
+        if not new_name or len(new_name) > config.MAX_APP_NAME_LENGTH:
+            return
+        owner = config._find_alias_owner(self.cfg, new_name)
+        if owner and owner != app_name:
+            popover.popdown()
+            self._prompt_merge_alias(app_name, new_name, owner)
+            return
+        app_entry = self.cfg["apps"].setdefault(
+            app_name, {"enabled": True, "sound": None}
+        )
+        app_entry["name"] = new_name
+        self._save()
+        self.app_rows[app_name]["name_label"].set_text(new_name)
+        popover.popdown()
+
+    def _on_app_rename_reset(self, button, app_name, popover):
+        app_entry = self.cfg.get("apps", {}).get(app_name)
+        if isinstance(app_entry, dict) and "name" in app_entry:
+            del app_entry["name"]
+            self._save()
+            self.app_rows[app_name]["name_label"].set_text(app_name)
+        popover.popdown()
+
+    def _prompt_merge_alias(self, source, alias, target):
+        owner_display = self._display_name(target)
+        source_display = self._display_name(source)
+        entry_store = self.app_rows[source]
+        popover = entry_store.get("merge_popover")
+        if popover is None:
+            popover = Gtk.Popover()
+            content = Gtk.Box(
+                orientation=Gtk.Orientation.VERTICAL, spacing=10,
+                margin_top=10, margin_bottom=10, margin_start=12, margin_end=12,
+            )
+            message = Gtk.Label(
+                wrap=True, xalign=0, max_width_chars=42,
+            )
+            actions = Gtk.Box(
+                orientation=Gtk.Orientation.HORIZONTAL, spacing=8,
+                halign=Gtk.Align.END,
+            )
+            confirm_button = Gtk.Button(label="Fusionar")
+            cancel_button = Gtk.Button(label="Cancelar")
+            confirm_button.add_css_class("destructive-action")
+            confirm_button.connect(
+                "clicked", self._on_merge_confirm, source, target, popover
+            )
+            cancel_button.connect("clicked", self._on_merge_cancel, popover)
+            actions.append(cancel_button)
+            actions.append(confirm_button)
+            content.append(message)
+            content.append(actions)
+            popover.set_child(content)
+            popover.set_parent(entry_store["row"])
+            entry_store["merge_popover"] = popover
+            entry_store["merge_message"] = message
+        entry_store["merge_message"].set_text(
+            f"El alias «{alias}» ya lo usa «{owner_display}».\n"
+            f"¿Fusionar? Se eliminará «{source_display}», sus "
+            f"notificaciones futuras se atribuirán a «{owner_display}» y "
+            f"«{source}» se añadirá como sinónimo."
+        )
+        popover.popup()
+
+    def _on_merge_confirm(self, button, source, target, popover):
+        popover.popdown()
+        self._merge_app_into(source, target)
+
+    def _on_merge_cancel(self, button, popover):
+        popover.popdown()
+
+    def _merge_app_into(self, source, target):
+        if source == target:
+            return
+        apps = self.cfg.get("apps", {})
+        if source not in apps:
+            return
+        source_cfg = apps.get(source, {})
+        target_cfg = apps.setdefault(target, {"enabled": True, "sound": None})
+        if source_cfg.get("enabled") is False:
+            target_cfg["enabled"] = False
+        if target_cfg.get("sound") is None and source_cfg.get("sound") is not None:
+            target_cfg["sound"] = source_cfg["sound"]
+        synonyms = list(target_cfg.get("synonyms") or [])
+        if source not in synonyms:
+            synonyms.append(source)
+        seen = set()
+        clean = []
+        for item in synonyms:
+            if item not in seen and 0 < len(item) <= config.MAX_APP_NAME_LENGTH:
+                seen.add(item)
+                clean.append(item)
+        if clean:
+            target_cfg["synonyms"] = clean[:config.MAX_SYNONYMS]
+        else:
+            target_cfg.pop("synonyms", None)
+        del apps[source]
+        self._save()
+        state = config.load_state()
+        apps_seen = [n for n in state.get("apps_seen", []) if n != source]
+        app_meta = dict(state.get("app_meta", {}))
+        app_meta.pop(source, None)
+        config.save_state({"apps_seen": apps_seen, "app_meta": app_meta})
+        entry = self.app_rows.pop(source, None)
+        if entry is not None:
+            self.apps_list.remove(entry["row"])
+
+    def _on_app_remove(self, button, app_name):
+        apps = self.cfg.get("apps", {})
+        apps.pop(app_name, None)
+        for other_cfg in apps.values():
+            if isinstance(other_cfg, dict):
+                other_syn = list(other_cfg.get("synonyms") or [])
+                if app_name in other_syn:
+                    other_syn.remove(app_name)
+                    if other_syn:
+                        other_cfg["synonyms"] = other_syn[: config.MAX_SYNONYMS]
+                    else:
+                        other_cfg.pop("synonyms", None)
+        self._save()
+        state = config.load_state()
+        apps_seen = [n for n in state.get("apps_seen", []) if n != app_name]
+        app_meta = dict(state.get("app_meta", {}))
+        app_meta.pop(app_name, None)
+        config.save_state({"apps_seen": apps_seen, "app_meta": app_meta})
+        entry = self.app_rows.pop(app_name, None)
+        if entry is not None:
+            self.apps_list.remove(entry["row"])
+
+    def _on_app_info(self, button, app_name):
+        entry_store = self.app_rows[app_name]
+        popover = entry_store.get("info_popover")
+        if popover is None:
+            popover = Gtk.Popover()
+            content = Gtk.Box(
+                orientation=Gtk.Orientation.VERTICAL, spacing=8,
+                margin_top=10, margin_bottom=10, margin_start=12, margin_end=12,
+            )
+            label = Gtk.Label(wrap=True, xalign=0, max_width_chars=44)
+            synonyms_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+            content.append(label)
+            content.append(synonyms_box)
+            popover.set_child(content)
+            popover.set_parent(button)
+            entry_store["info_popover"] = popover
+            entry_store["info_label"] = label
+            entry_store["info_synonyms_box"] = synonyms_box
+        entry_store["info_label"].set_text(self._format_app_info(app_name))
+        self._refresh_info_synonyms(app_name, entry_store["info_synonyms_box"])
+        popover.popup()
+
+    def _refresh_info_synonyms(self, app_name, synonyms_box):
+        for child in list(synonyms_box):
+            synonyms_box.remove(child)
+        app_cfg = self.cfg.get("apps", {}).get(app_name, {})
+        synonyms = app_cfg.get("synonyms") or []
+        if not synonyms:
+            return
+        header = Gtk.Label(
+            label="Sinónimos (pulsa Restaurar para separar):",
+            xalign=0, halign=Gtk.Align.START,
+        )
+        header.add_css_class("dim-label")
+        synonyms_box.append(header)
+        for syn in synonyms:
+            row = Gtk.Box(
+                orientation=Gtk.Orientation.HORIZONTAL, spacing=8,
+            )
+            syn_label = Gtk.Label(
+                label=syn, xalign=0, hexpand=True,
+                ellipsize=Pango.EllipsizeMode.END, tooltip_text=syn,
+            )
+            restore_button = Gtk.Button(label="Restaurar")
+            restore_button.props.valign = Gtk.Align.CENTER
+            restore_button.connect(
+                "clicked", self._on_synonym_restore, app_name, syn
+            )
+            row.append(syn_label)
+            row.append(restore_button)
+            synonyms_box.append(row)
+
+    def _on_synonym_restore(self, button, app_name, synonym):
+        app_cfg = self.cfg["apps"].get(app_name)
+        if not isinstance(app_cfg, dict):
+            return
+        synonyms = list(app_cfg.get("synonyms") or [])
+        if synonym in synonyms:
+            synonyms.remove(synonym)
+            if synonyms:
+                app_cfg["synonyms"] = synonyms[: config.MAX_SYNONYMS]
+            else:
+                app_cfg.pop("synonyms", None)
+        self._save()
+        state = config.load_state()
+        apps_seen = list(state.get("apps_seen", []))
+        if synonym not in apps_seen:
+            apps_seen.append(synonym)
+        config.save_state(
+            {"apps_seen": apps_seen, "app_meta": state.get("app_meta", {})}
+        )
+        self._ensure_app_row(synonym)
+        self._refresh_app_sensitivity()
+        popover = self.app_rows[app_name].get("info_popover")
+        if popover is not None:
+            synonyms_box = self.app_rows[app_name].get("info_synonyms_box")
+            if synonyms_box is not None:
+                self._refresh_info_synonyms(app_name, synonyms_box)
+            self.app_rows[app_name]["info_label"].set_text(
+                self._format_app_info(app_name)
+            )
+
+    def _on_reset_apps(self, button):
+        popover = Gtk.Popover()
+        content = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=10,
+            margin_top=10, margin_bottom=10, margin_start=12, margin_end=12,
+        )
+        message = Gtk.Label(
+            wrap=True, xalign=0, max_width_chars=44,
+        )
+        message.set_text(
+            "¿Vaciar la lista de aplicaciones detectadas y su configuración "
+            "por-app? Se borrarán todos los renombrados, sinónimos y contadores. "
+            "Las apps se volverán a detectar al recibir notificaciones."
+        )
+        actions = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=8,
+            halign=Gtk.Align.END,
+        )
+        confirm_button = Gtk.Button(label="Vaciar lista")
+        cancel_button = Gtk.Button(label="Cancelar")
+        confirm_button.add_css_class("destructive-action")
+        confirm_button.connect("clicked", self._on_reset_apps_confirm, popover)
+        cancel_button.connect("clicked", self._on_reset_apps_cancel, popover)
+        actions.append(cancel_button)
+        actions.append(confirm_button)
+        content.append(message)
+        content.append(actions)
+        popover.set_child(content)
+        popover.set_parent(button)
+        popover.popup()
+
+    def _on_reset_apps_confirm(self, button, popover):
+        popover.popdown()
+        self.cfg["apps"] = {}
+        self._save()
+        config.save_state({"apps_seen": [], "app_meta": {}})
+        for entry in self.app_rows.values():
+            self.apps_list.remove(entry["row"])
+        self.app_rows = {}
+        self._refresh_app_sensitivity()
+
+    def _on_reset_apps_cancel(self, button, popover):
+        popover.popdown()
+
+    def _format_app_info(self, app_name):
+        app_cfg = self.cfg.get("apps", {}).get(app_name, {})
+        state = config.load_state()
+        meta = state.get("app_meta", {}).get(app_name, {})
+        comm = meta.get("comm")
+        synonyms = app_cfg.get("synonyms") or []
+        seen_count = meta.get("seen_count")
+        last_seen = meta.get("last_seen")
+        display = self._display_name(app_name)
+        has_meta = bool(meta)
+        lines = [f"Nombre de notificación: {app_name}"]
+        if display != app_name:
+            lines.append(f"Mostrado como: {display}")
+        lines.append(f"Proceso emisor: {comm or '—'}")
+        lines.append(f"Número de sinónimos: {len(synonyms)}")
+        lines.append(f"Notificaciones: {seen_count if seen_count else '—'}")
+        if last_seen:
+            stamp = datetime.fromtimestamp(last_seen).strftime(
+                "%Y-%m-%d %H:%M"
+            )
+        else:
+            stamp = "—"
+        lines.append(f"Última vista: {stamp}")
+        if not has_meta:
+            lines.append(
+                "Esta aplicación se detectó antes de la v0.1.9; aún no"
+                " se ha observado ninguna notificación suya con el daemon"
+                " actual. Al recibirla se rellenarán proceso, contador y"
+                " última vista."
+            )
+        return "\n".join(lines)
 
     def _rebuild_all_dropdowns(self):
         self._rebuilding = True
@@ -227,8 +616,11 @@ class NotifyWindow(Gtk.ApplicationWindow):
             label = Gtk.Label(
                 label=os.path.basename(path), hexpand=True, xalign=0,
                 tooltip_text=path,
+                ellipsize=Pango.EllipsizeMode.END,
             )
+            label.set_max_width_chars(40)
             remove_button = Gtk.Button(label="Quitar")
+            remove_button.props.valign = Gtk.Align.CENTER
             remove_button.connect("clicked", self._on_remove_custom, path)
             box.append(label)
             box.append(remove_button)
