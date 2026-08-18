@@ -91,12 +91,10 @@
     <h2><span>03</span><span data-en="Screenshots" data-es="Capturas">Screenshots</span></h2>
     <div class="screenshots">
       <figure class="screenshot">
-        <img src="screenshots/gui-main.png" alt="NotifySound main window">
-        <figcaption data-en="The settings window" data-es="La ventana de ajustes">The settings window</figcaption>
+        <img src="screenshots/gui-1.png" alt="NotifySound settings window" loading="lazy" onclick="openLightbox(this.src)">
       </figure>
       <figure class="screenshot">
-        <img src="screenshots/gui-custom.png" alt="NotifySound with custom sounds">
-        <figcaption data-en="Custom sounds, app aliasing and per-app info" data-es="Sonidos personalizados, alias de apps e info por app">Custom sounds, app aliasing and per-app info</figcaption>
+        <img src="screenshots/gui-2.png" alt="NotifySound app management" loading="lazy" onclick="openLightbox(this.src)">
       </figure>
     </div>
   </div>
@@ -167,6 +165,24 @@ notify-sound --quit     # stop the daemon</code></pre>
     <p><a href="https://github.com/ChristianM023/notify-sound" target="_blank" rel="noopener">github.com/ChristianM023/notify-sound</a></p>
   </div>
 </footer>
+
+<div id="lightbox" class="lightbox" onclick="closeLightbox()">
+  <img id="lightbox-img" src="" alt="">
+</div>
+
+<script>
+function openLightbox(src) {
+  var lb = document.getElementById('lightbox');
+  document.getElementById('lightbox-img').src = src;
+  lb.classList.add('active');
+}
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('active');
+}
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') closeLightbox();
+});
+</script>
 
 <script>
 (function () {
