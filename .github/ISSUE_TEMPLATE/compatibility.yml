@@ -1,0 +1,81 @@
+name: Compatibility report
+description: Report how NotifySound behaves on your desktop environment
+title: "[Compatibility]: "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        NotifySound targets GNOME and other desktops built on the freedesktop
+        notification spec. Tell us how it behaves on yours so we can keep it
+        compatible.
+  - type: input
+    id: distribution
+    attributes:
+      label: Distribution
+      description: Your OS distribution and version.
+      placeholder: "Example: Fedora 40, openSUSE Tumbleweed, Arch Linux"
+    validations:
+      required: true
+  - type: dropdown
+    id: desktop
+    attributes:
+      label: Desktop environment
+      description: Which desktop environment are you using?
+      options:
+        - GNOME
+        - KDE Plasma
+        - Cinnamon
+        - XFCE
+        - MATE
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: desktop-version
+    attributes:
+      label: Desktop version
+      description: The version of your desktop environment, if you know it.
+      placeholder: "Example: GNOME 46, Plasma 6.1"
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: NotifySound version
+      description: The version you are running (see the release list on GitHub).
+      placeholder: "Example: 0.1.10"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Installation method
+      description: How did you install NotifySound?
+      options:
+        - install.sh
+        - Debian package (.deb)
+        - systemd user unit
+        - Other
+      default: 0
+    validations:
+      required: true
+  - type: dropdown
+    id: result
+    attributes:
+      label: Result
+      description: How well does NotifySound work on your desktop?
+      options:
+        - It works as expected
+        - It works partially
+        - It does not work
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: What works, what does not, and any error output you saw.
+      placeholder: "Example: sounds play for most apps but not for Telegram; `canberra-gtk-play` reports an error; ..."
+    validations:
+      required: false
