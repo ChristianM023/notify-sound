@@ -1,3 +1,4 @@
+# Runtime / artefactos
 __pycache__/
 *.pyc
 .env
@@ -8,4 +9,12 @@ __pycache__/
 config.json
 state.json
 dist/
-AGENTS.md
+
+# Privado: estructura de desarrollo local (no se commitea al repo público)
+/AGENTS.md
+/spec/
+/.opencode/
+/scripts/
+/docs/
+/opencode.json
+/CHANGELOG.md

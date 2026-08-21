@@ -1,0 +1,86 @@
+name: Bug report
+description: Report a bug in NotifySound so we can fix it
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this bug. Fill in the fields below;
+        the more detail you give, the faster we can fix it.
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+      placeholder: "Example: a sound should play when a notification from <app> arrives"
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened instead?
+      placeholder: "Example: no sound is played, or the sound plays twice"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The exact steps that lead to the problem.
+      placeholder: |
+        1. Start the daemon with `notify-sound --daemon`
+        2. Trigger a notification from <app>
+        3. Observe that ...
+      render: markdown
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: "## Environment"
+  - type: input
+    id: distribution
+    attributes:
+      label: Distribution
+      description: Your OS distribution and version.
+      placeholder: "Example: Ubuntu 24.04, Fedora 40, Arch Linux"
+    validations:
+      required: true
+  - type: input
+    id: desktop
+    attributes:
+      label: Desktop environment and version
+      description: The desktop environment and its version (for example GNOME 46, KDE Plasma 6.1, XFCE 4.18).
+      placeholder: "Example: GNOME 46 on Wayland"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: NotifySound version
+      description: The version you are running (shown in the GUI title — see the release list on GitHub).
+      placeholder: "Example: 0.1.10"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Installation method
+      description: How did you install NotifySound?
+      options:
+        - install.sh
+        - Debian package (.deb)
+        - systemd user unit
+        - Other
+      default: 0
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Additional context
+      description: Anything else that may help — terminal output, notification server, audio device, screenshots.
+      placeholder: "Example: output of `notify-sound --daemon`, only affects app X, custom sound file in MP3 format"
+    validations:
+      required: false

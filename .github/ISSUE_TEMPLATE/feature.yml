@@ -1,0 +1,34 @@
+name: Feature request
+description: Suggest an idea for NotifySound
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an idea. Describe the problem you want to solve
+        first, then the solution you have in mind.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What problem or pain point does this address?
+      placeholder: "Example: notifications from <app> are still silent even when NotifySound is running"
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How would you like this to work?
+      placeholder: "Example: a per-app 'always play this sound' option that overrides the app's own sound"
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workarounds or alternative approaches you tried or thought of.
+      placeholder: "Example: I tried setting a global sound, but it does not cover this case"
+    validations:
+      required: false
