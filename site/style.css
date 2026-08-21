@@ -44,11 +44,12 @@ nav .container {
 .nav-links a { color: var(--fg-dim); font-size: 0.9rem; }
 .nav-links a:hover { color: var(--fg); }
 .lang-toggle {
-  background: var(--bg-soft); color: var(--fg);
+  display: inline-block; background: var(--bg-soft); color: var(--fg);
   border: 1px solid var(--border); border-radius: var(--radius);
   padding: 4px 10px; cursor: pointer; font-size: 0.85rem; font-family: var(--sans);
+  text-decoration: none;
 }
-.lang-toggle:hover { border-color: var(--accent); }
+.lang-toggle:hover { border-color: var(--accent); text-decoration: none; }
 
 /* Hero */
 header.hero {
