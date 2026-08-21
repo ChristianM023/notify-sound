@@ -89,6 +89,18 @@ rm ~/.config/autostart/notify-sound.desktop
 rm -rf ~/.config/notify-sound
 ```
 
+## Quick test
+
+After installing, verify it works in seconds:
+
+```sh
+notify-sound --daemon
+notify-send "Test" "If you hear a sound, it works"
+```
+
+If you installed with autostart enabled (the default), the daemon is already
+running and the `notify-send` line alone is enough.
+
 ## How it works
 
 NotifySound runs a small daemon that listens to the desktop notification bus.
@@ -103,6 +115,18 @@ one individually (enable/disable, per-app sound).
 
 Technical details (parser contract, daemon lifecycle) live in the
 [Development](#development) section.
+
+## Compatibility
+
+| Level | Environments |
+|---|---|
+| Supported and tested | GNOME (validated on Ubuntu/Debian) |
+| Compatible in theory, not tested yet | Other freedesktop desktops: KDE, XFCE, Cinnamon, MATE |
+| Not supported | Non-Linux (Windows, macOS) |
+
+NotifySound follows the freedesktop notification spec, so other desktops built
+on `org.freedesktop.Notifications` should work, but they have not been
+validated yet — nothing is claimed until it is tested.
 
 ## Usage
 
@@ -199,6 +223,20 @@ The app list is auto-detected, so entries are re-added when the app sends
 a new notification. `app_meta` powers the "Información" popover (count,
 last-seen time, detected process) and is written by the daemon; it is
 optional and tolerated when absent (v0.1.7 state files still load).
+
+## Privacy
+
+NotifySound processes everything locally: it never connects to the network,
+sends no telemetry, and stores no notification content. The daemon reads only
+metadata (app name, hints) from the notification bus and keeps it in memory.
+The only per-app data written to disk is `app_meta` in
+`~/.config/notify-sound/state.json` (notification count, last-seen time,
+detected process) — user configuration, never the body of a notification.
+
+To observe notifications, the daemon runs `dbus-monitor` in eavesdrop mode,
+the only reliable way to watch the notification bus from Python. Config and
+state files are written atomically (temp file + rename) with `O_NOFOLLOW` and
+mode 0600, so only your user can read them.
 
 ## Troubleshooting
 
