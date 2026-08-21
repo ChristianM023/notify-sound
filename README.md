@@ -2,39 +2,24 @@
 
 Play sounds for desktop notifications that do not include one.
 
-On GNOME (and other desktop environments built on `org.freedesktop.Notifications`),
-a notification only makes a sound when the app that sent it explicitly includes a
-`sound-name` or `sound-file` hint. Most apps never do — Warp, terminals, IDE
-builds, cron-like tools — so their notifications stay silent.
+On GNOME (and other desktop environments built on
+`org.freedesktop.Notifications`), a notification only makes a sound when the
+app that sent it explicitly includes a `sound-name` or `sound-file` hint.
+Most apps never do — Warp, terminals, IDE builds, cron-like tools — so their
+notifications stay silent.
 
 NotifySound is a small daemon that watches the notification bus and plays a
-sound of your choice whenever a notification that has no sound of its own
-arrives. It also ships a simple GTK4 app to configure everything.
+sound of your choice whenever a notification arrives without its own sound.
+It also ships a simple GTK4 app to configure everything.
 
-## How it works
+**Install** (per-user, enables autostart):
 
-- The daemon spawns `dbus-monitor` (part of the `dbus` package, present on every
-  desktop) with an eavesdropping match rule and parses its output in a reader
-  thread. This is the only reliable way to observe `Notify` method calls from
-  Python: `Gio.DBusConnection` handles `AddMatch` locally without ever reaching
-  the bus daemon, and `BecomeMonitor` is rejected for ordinary connections.
-- Each notification is processed **immediately** (no waiting for the next one):
-  a message ends at its top-level `int32 <timeout>` line — the last argument of
-  every `Notify` call. Blank lines are deliberately **not** used as message
-  separators, because string values containing `\n\n` (chat apps, emails)
-  print as physical blank lines *inside* a message and would cut it in half.
-- Notifications that carry `sound-file`/`sound-name` hints are left untouched
-  when **"no duplicate"** is enabled (Telegram keeps its own sound, for
-  example). With it disabled both sounds play on purpose.
-- Notifications carrying the **`suppress-sound`** hint are **always** silent:
-  the app declared that it manages its own sound (Chromium-based browsers send
-  this for PWAs/web pages that play audio themselves).
-- Re-emissions from gnome-shell (identified by the `x-shell-sender` hint) are
-  discarded so each notification plays exactly once.
-- For everything else it plays the sound configured in the GUI
-  (`canberra-gtk-play`, the freedesktop sound system).
-- Apps that send notifications are collected automatically so you can tune
-  each one individually (enable/disable, per-app sound).
+```sh
+git clone https://github.com/ChristianM023/notify-sound.git && cd notify-sound && ./install.sh
+```
+
+Ubuntu/Debian? [Install the release package](#debian-package) without cloning
+the repository.
 
 ## Requirements
 
@@ -70,7 +55,7 @@ Ubuntu/Debian users can install the release package without cloning the
 repository:
 
 ```sh
-sudo dpkg -i ./notify-sound_0.1.7_all.deb
+sudo dpkg -i ./notify-sound_0.1.10_all.deb
 sudo apt-get -f install
 notify-sound
 ```
@@ -103,6 +88,45 @@ rm ~/.local/share/applications/notify-sound.desktop
 rm ~/.config/autostart/notify-sound.desktop
 rm -rf ~/.config/notify-sound
 ```
+
+## Quick test
+
+After installing, verify it works in seconds:
+
+```sh
+notify-sound --daemon
+notify-send "Test" "If you hear a sound, it works"
+```
+
+If you installed with autostart enabled (the default), the daemon is already
+running and the `notify-send` line alone is enough.
+
+## How it works
+
+NotifySound runs a small daemon that listens to the desktop notification bus.
+When a notification arrives without a sound of its own, it plays the sound you
+configured in the GUI.
+
+Notifications that already carry their own sound are left untouched, and
+notifications that declare `suppress-sound` — apps that manage their own
+audio, such as Chromium-based browsers for media — stay silent on purpose.
+Apps that send notifications are collected automatically so you can tune each
+one individually (enable/disable, per-app sound).
+
+Technical details (parser contract, daemon lifecycle) live in the
+[Development](#development) section.
+
+## Compatibility
+
+| Level | Environments |
+|---|---|
+| Supported and tested | GNOME (validated on Ubuntu/Debian) |
+| Compatible in theory, not tested yet | Other freedesktop desktops: KDE, XFCE, Cinnamon, MATE |
+| Not supported | Non-Linux (Windows, macOS) |
+
+NotifySound follows the freedesktop notification spec, so other desktops built
+on `org.freedesktop.Notifications` should work, but they have not been
+validated yet — nothing is claimed until it is tested.
 
 ## Usage
 
@@ -199,6 +223,20 @@ The app list is auto-detected, so entries are re-added when the app sends
 a new notification. `app_meta` powers the "Información" popover (count,
 last-seen time, detected process) and is written by the daemon; it is
 optional and tolerated when absent (v0.1.7 state files still load).
+
+## Privacy
+
+NotifySound processes everything locally: it never connects to the network,
+sends no telemetry, and stores no notification content. The daemon reads only
+metadata (app name, hints) from the notification bus and keeps it in memory.
+The only per-app data written to disk is `app_meta` in
+`~/.config/notify-sound/state.json` (notification count, last-seen time,
+detected process) — user configuration, never the body of a notification.
+
+To observe notifications, the daemon runs `dbus-monitor` in eavesdrop mode,
+the only reliable way to watch the notification bus from Python. Config and
+state files are written atomically (temp file + rename) with `O_NOFOLLOW` and
+mode 0600, so only your user can read them.
 
 ## Troubleshooting
 
