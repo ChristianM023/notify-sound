@@ -121,9 +121,31 @@
   </div>
 </section>
 
+<section id="compare">
+  <div class="container">
+    <h2><span>04</span><span>NotifySound vs. la extensión de GNOME</span></h2>
+    <p>Existe una <a href="https://extensions.gnome.org/extension/9759/notification-sound/" target="_blank" rel="noopener">extensión de GNOME Shell</a> que también añade sonido a las notificaciones. Esta es una comparación honesta:</p>
+    <table class="compare">
+      <thead>
+        <tr><th></th><th>NotifySound</th><th>Extensión de GNOME</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Tipo</td><td>Daemon independiente + GUI GTK4</td><td>Extensión de GNOME Shell</td></tr>
+        <tr><td>Alcance</td><td>Rutas de GNOME, GTK y freedesktop</td><td>Notificaciones de GNOME Shell</td></tr>
+        <tr><td>Control por app</td><td>Activar/desactivar por app, sonidos por app, alias</td><td>Sonido para todas las notificaciones</td></tr>
+        <tr><td>Sonidos propios</td><td>OGG/WAV/FLAC/MP3/M4A/AAC</td><td>Tema de sonidos del sistema</td></tr>
+        <tr><td>Ajustes</td><td>Ventana GTK4</td><td>Preferencias de GNOME Extensions</td></tr>
+        <tr><td>Instalación</td><td>.deb o script por usuario</td><td>Un clic en extensions.gnome.org</td></tr>
+        <tr><td>Fuera de GNOME</td><td>Enfoque GNOME, rutas freedesktop</td><td>No (solo GNOME Shell)</td></tr>
+      </tbody>
+    </table>
+    <p>Ambos son gratuitos y de código abierto. Elige el que mejor se adapte a tu flujo — o usa ambos si prefieres.</p>
+  </div>
+</section>
+
 <section id="install">
   <div class="container">
-    <h2><span>04</span><span>Instalación</span></h2>
+    <h2><span>05</span><span>Instalación</span></h2>
     <p>Paquete para Ubuntu / Debian (recomendado):</p>
     <div class="install-actions">
       <a class="btn primary small" href="https://github.com/ChristianM023/notify-sound/releases/download/v0.1.10/notify-sound_0.1.10_all.deb" target="_blank" rel="noopener">Descargar .deb</a>
@@ -148,7 +170,7 @@ notify-sound --quit     # detiene el daemon</code></pre>
 
 <section id="screenshots">
   <div class="container">
-    <h2><span>05</span><span>Capturas</span></h2>
+    <h2><span>06</span><span>Capturas</span></h2>
     <div class="screenshots">
       <figure class="screenshot">
         <img src="../screenshots/gui-1.png" alt="Ventana de ajustes de NotifySound" loading="lazy" onclick="openLightbox(this.src)">
@@ -162,7 +184,7 @@ notify-sound --quit     # detiene el daemon</code></pre>
 
 <section id="donate">
   <div class="container">
-    <h2><span>06</span><span>Apoya el proyecto</span></h2>
+    <h2><span>07</span><span>Apoya el proyecto</span></h2>
     <p>NotifySound es gratuito y de código abierto, para todos. Si te alegra un poco el día y quieres dar las gracias, cualquier contribución es bienvenida — pero <strong>nada es obligatorio</strong>.</p>
     <div class="donate-grid">
       <div class="donate-card">
