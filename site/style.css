@@ -68,6 +68,8 @@ header.hero {
   font-size: 0.85rem; color: var(--fg);
 }
 .badge.green { border-color: var(--accent-2); color: var(--accent-2); }
+.stars-badge { display: inline-flex; align-items: center; height: 30px; }
+.stars-badge img { height: 28px; display: block; }
 .hero-cta { margin-top: 26px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 .btn {
   display: inline-block; padding: 10px 22px; border-radius: var(--radius);
