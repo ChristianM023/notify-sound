@@ -168,9 +168,27 @@ notify-sound --quit     # stop the daemon</code></pre>
   </div>
 </section>
 
+<section id="quick-test">
+  <div class="container">
+    <h2><span>06</span><span>Quick test</span></h2>
+    <p>After installing, verify it works in seconds:</p>
+    <pre><code>notify-sound --daemon
+notify-send "Test" "If you hear a sound, it works"</code></pre>
+    <p>If you installed with autostart enabled (the default), the daemon is already running and the <code>notify-send</code> line alone is enough.</p>
+  </div>
+</section>
+
+<section id="demo">
+  <div class="container">
+    <h2><span>07</span><span>Demo</span></h2>
+    <!-- TODO: Replace with demo GIF/video when available. See site/demo/README.md for recording instructions. -->
+    <div class="demo-placeholder">A short demo is coming soon.</div>
+  </div>
+</section>
+
 <section id="screenshots">
   <div class="container">
-    <h2><span>06</span><span>Screenshots</span></h2>
+    <h2><span>08</span><span>Screenshots</span></h2>
     <div class="screenshots">
       <figure class="screenshot">
         <img src="screenshots/gui-1.png" alt="NotifySound settings window" loading="lazy" onclick="openLightbox(this.src)">
@@ -182,9 +200,22 @@ notify-sound --quit     # stop the daemon</code></pre>
   </div>
 </section>
 
+<section id="troubleshooting">
+  <div class="container">
+    <h2><span>09</span><span>Troubleshooting</span></h2>
+    <ul>
+      <li><strong>Nothing plays at all:</strong> make sure <code>canberra-gtk-play</code> is installed and the daemon is running.</li>
+      <li><strong>Custom sound file (MP3, M4A...) does not play:</strong> install GStreamer or one of <code>ffplay</code>, <code>mpv</code>, <code>mpg123</code>.</li>
+      <li><strong>Notifications with their own sound are played twice:</strong> enable &quot;no_duplicate&quot; in the GUI.</li>
+      <li><strong>A notification arrives but plays no sound:</strong> the app may send <code>suppress-sound</code> (intentional) — check the per-app toggle.</li>
+    </ul>
+    <p>See the <a href="https://github.com/ChristianM023/notify-sound#troubleshooting" target="_blank" rel="noopener">README</a> for the full troubleshooting guide.</p>
+  </div>
+</section>
+
 <section id="donate">
   <div class="container">
-    <h2><span>07</span><span>Support the project</span></h2>
+    <h2><span>10</span><span>Support the project</span></h2>
     <p>NotifySound is free and open source, for everyone. If it makes your day a little better and you want to say thanks, any contribution is welcome — but <strong>nothing is mandatory</strong>.</p>
     <div class="donate-grid">
       <div class="donate-card">

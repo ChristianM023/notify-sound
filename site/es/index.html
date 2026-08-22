@@ -168,9 +168,27 @@ notify-sound --quit     # detiene el daemon</code></pre>
   </div>
 </section>
 
+<section id="quick-test">
+  <div class="container">
+    <h2><span>06</span><span>Prueba rápida</span></h2>
+    <p>Tras la instalación, comprueba que funciona en segundos:</p>
+    <pre><code>notify-sound --daemon
+notify-send "Prueba" "Si oyes un sonido, funciona"</code></pre>
+    <p>Si instalaste con el autostart activado (el valor por defecto), el daemon ya está en ejecución y la línea <code>notify-send</code> por sí sola es suficiente.</p>
+  </div>
+</section>
+
+<section id="demo">
+  <div class="container">
+    <h2><span>07</span><span>Demo</span></h2>
+    <!-- TODO: Reemplazar con GIF/video de demo cuando esté disponible. Ver site/demo/README.md para instrucciones de grabación. -->
+    <div class="demo-placeholder">Una demostración corta llegará pronto.</div>
+  </div>
+</section>
+
 <section id="screenshots">
   <div class="container">
-    <h2><span>06</span><span>Capturas</span></h2>
+    <h2><span>08</span><span>Capturas</span></h2>
     <div class="screenshots">
       <figure class="screenshot">
         <img src="../screenshots/gui-1.png" alt="Ventana de ajustes de NotifySound" loading="lazy" onclick="openLightbox(this.src)">
@@ -182,9 +200,22 @@ notify-sound --quit     # detiene el daemon</code></pre>
   </div>
 </section>
 
+<section id="troubleshooting">
+  <div class="container">
+    <h2><span>09</span><span>Solución de problemas</span></h2>
+    <ul>
+      <li><strong>No suena nada:</strong> asegúrate de que <code>canberra-gtk-play</code> está instalado y el daemon está en ejecución.</li>
+      <li><strong>Un archivo de sonido personalizado (MP3, M4A...) no suena:</strong> instala GStreamer o uno de <code>ffplay</code>, <code>mpv</code>, <code>mpg123</code>.</li>
+      <li><strong>Las notificaciones con sonido propio se reproducen dos veces:</strong> activa &quot;no repetir&quot; en la GUI.</li>
+      <li><strong>Llega una notificación pero no reproduce sonido:</strong> la app puede enviar <code>suppress-sound</code> (intencional) — comprueba el alternador de esa app.</li>
+    </ul>
+    <p>Consulta el <a href="https://github.com/ChristianM023/notify-sound/blob/main/README.es.md#solución-de-problemas" target="_blank" rel="noopener">README</a> para la guía completa de solución de problemas.</p>
+  </div>
+</section>
+
 <section id="donate">
   <div class="container">
-    <h2><span>07</span><span>Apoya el proyecto</span></h2>
+    <h2><span>10</span><span>Apoya el proyecto</span></h2>
     <p>NotifySound es gratuito y de código abierto, para todos. Si te alegra un poco el día y quieres dar las gracias, cualquier contribución es bienvenida — pero <strong>nada es obligatorio</strong>.</p>
     <div class="donate-grid">
       <div class="donate-card">
