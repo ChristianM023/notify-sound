@@ -71,9 +71,23 @@
   </div>
 </section>
 
+<section id="why">
+  <div class="container">
+    <h2><span>02</span><span>Why does this exist?</span></h2>
+    <div class="why-box">
+      <p>GNOME notifications don't play a sound by default. The freedesktop notification spec includes optional hints (<code>sound-name</code>, <code>sound-file</code>), but most apps never set them — so terminals, IDE builds, cron-like tools and many others stay completely silent.</p>
+      <p>This isn't a bug: GNOME's maintainers have explained that apps rely on notifications being silent (some play their own sound and would double up), and the new notification API will default to having sounds. Until then, NotifySound fills the gap.</p>
+      <ul>
+        <li><a href="https://discourse.gnome.org/t/no-notification-sound/19933" target="_blank" rel="noopener">"No notification sound" — GNOME Discourse (2024)</a></li>
+        <li><a href="https://discourse.gnome.org/t/no-notification-sound-part-2/28369" target="_blank" rel="noopener">"No notification sound, part 2" — GNOME Discourse (2025)</a></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
 <section id="features">
   <div class="container">
-    <h2><span>02</span><span>Features</span></h2>
+    <h2><span>03</span><span>Features</span></h2>
     <div class="features">
       <div class="feature">
         <h3>Play sound for any silent notification</h3>
@@ -109,7 +123,7 @@
 
 <section id="install">
   <div class="container">
-    <h2><span>03</span><span>Install</span></h2>
+    <h2><span>04</span><span>Install</span></h2>
     <p>Ubuntu / Debian package (recommended):</p>
     <div class="install-actions">
       <a class="btn primary small" href="https://github.com/ChristianM023/notify-sound/releases/download/v0.1.10/notify-sound_0.1.10_all.deb" target="_blank" rel="noopener">Download .deb</a>
@@ -134,7 +148,7 @@ notify-sound --quit     # stop the daemon</code></pre>
 
 <section id="screenshots">
   <div class="container">
-    <h2><span>04</span><span>Screenshots</span></h2>
+    <h2><span>05</span><span>Screenshots</span></h2>
     <div class="screenshots">
       <figure class="screenshot">
         <img src="screenshots/gui-1.png" alt="NotifySound settings window" loading="lazy" onclick="openLightbox(this.src)">
@@ -148,7 +162,7 @@ notify-sound --quit     # stop the daemon</code></pre>
 
 <section id="donate">
   <div class="container">
-    <h2><span>05</span><span>Support the project</span></h2>
+    <h2><span>06</span><span>Support the project</span></h2>
     <p>NotifySound is free and open source, for everyone. If it makes your day a little better and you want to say thanks, any contribution is welcome — but <strong>nothing is mandatory</strong>.</p>
     <div class="donate-grid">
       <div class="donate-card">
