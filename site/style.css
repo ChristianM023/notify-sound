@@ -68,6 +68,8 @@ header.hero {
   font-size: 0.85rem; color: var(--fg);
 }
 .badge.green { border-color: var(--accent-2); color: var(--accent-2); }
+.stars-badge { display: inline-flex; align-items: center; height: 30px; }
+.stars-badge img { height: 28px; display: block; }
 .hero-cta { margin-top: 26px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 .btn {
   display: inline-block; padding: 10px 22px; border-radius: var(--radius);
@@ -93,6 +95,24 @@ section li strong { color: var(--fg); }
   border-left: 3px solid var(--warn); border-radius: var(--radius);
   padding: 16px 18px; margin-bottom: 16px;
 }
+
+.why-box {
+  background: var(--bg-soft); border: 1px solid var(--border);
+  border-left: 3px solid var(--accent); border-radius: var(--radius);
+  padding: 16px 18px; margin-bottom: 16px;
+}
+.why-box ul { margin: 8px 0 0 22px; }
+
+/* Comparison table */
+table.compare {
+  width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.9rem;
+}
+table.compare th, table.compare td {
+  border: 1px solid var(--border); padding: 10px 12px; text-align: left; vertical-align: top;
+}
+table.compare thead th { background: var(--bg-soft); color: var(--fg); }
+table.compare td:first-child { font-weight: 600; color: var(--fg); background: var(--bg-soft); }
+table.compare td { color: var(--fg-dim); }
 
 /* Features grid */
 .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; }
