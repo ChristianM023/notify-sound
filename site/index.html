@@ -6,6 +6,10 @@
 <title>NotifySound — Sounds for silent notifications</title>
 <meta name="description" content="NotifySound plays a sound for desktop notifications that do not include one. Free and open source for Linux.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔔</text></svg>">
+<link rel="canonical" href="https://christianm023.github.io/notify-sound/">
+<link rel="alternate" hreflang="en" href="https://christianm023.github.io/notify-sound/">
+<link rel="alternate" hreflang="es" href="https://christianm023.github.io/notify-sound/es/">
+<link rel="alternate" hreflang="x-default" href="https://christianm023.github.io/notify-sound/">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -14,19 +18,19 @@
   <div class="container">
     <a class="logo" href="#top"><span>◆</span> NotifySound</a>
     <div class="nav-links">
-      <a href="#features" data-en="Features" data-es="Características">Features</a>
-      <a href="#install" data-en="Install" data-es="Instalación">Install</a>
-      <a href="#donate" data-en="Donate" data-es="Donar">Donate</a>
+      <a href="#features">Features</a>
+      <a href="#install">Install</a>
+      <a href="#donate">Donate</a>
       <a href="https://github.com/ChristianM023/notify-sound" target="_blank" rel="noopener">GitHub ↗</a>
     </div>
-    <button class="lang-toggle" id="langToggle" title="Language / Idioma">ES</button>
+    <a class="lang-toggle" href="es/index.html">Español</a>
   </div>
 </nav>
 
 <header class="hero" id="top">
   <div class="container">
     <h1><span>Notify</span>Sound</h1>
-    <p class="tagline" data-en="Sounds for the notifications that keep quiet." data-es="Sonidos para las notificaciones que se quedan en silencio.">Sounds for the notifications that keep quiet.</p>
+    <p class="tagline">Sounds for the notifications that keep quiet.</p>
     <div class="hero-badges">
       <span class="badge green">100% Free &amp; Open Source</span>
       <span class="badge">MIT License</span>
@@ -34,53 +38,53 @@
       <span class="badge">Python + GTK4</span>
     </div>
     <div class="hero-cta">
-      <a class="btn primary" href="https://github.com/ChristianM023/notify-sound" target="_blank" rel="noopener" data-en="View on GitHub" data-es="Ver en GitHub">View on GitHub</a>
-      <a class="btn secondary" href="#install" data-en="Install it now" data-es="Instalarlo ahora">Install it now</a>
+      <a class="btn primary" href="https://github.com/ChristianM023/notify-sound" target="_blank" rel="noopener">View on GitHub</a>
+      <a class="btn secondary" href="#install">Install it now</a>
     </div>
   </div>
 </header>
 
 <section id="problem">
   <div class="container">
-    <h2><span>01</span><span data-en="The problem" data-es="El problema">The problem</span></h2>
+    <h2><span>01</span><span>The problem</span></h2>
     <div class="problem-box">
-      <p data-en="On GNOME, a notification only makes a sound when the app that sent it explicitly includes a <strong>sound-name</strong> or <strong>sound-file</strong> hint. Most apps never do — Warp, terminals, IDE builds, cron-like tools — so their notifications stay <strong>completely silent</strong>." data-es="En GNOME, una notificación solo hace sonido cuando la app que la envía incluye explícitamente un hint <strong>sound-name</strong> o <strong>sound-file</strong>. La mayoría de apps nunca lo hacen — Warp, terminales, compilaciones de IDE, herramientas tipo cron — así que sus notificaciones quedan <strong>completamente mudas</strong>.">On GNOME, a notification only makes a sound when the app that sent it explicitly includes a <strong>sound-name</strong> or <strong>sound-file</strong> hint. Most apps never do — Warp, terminals, IDE builds, cron-like tools — so their notifications stay <strong>completely silent</strong>.</p>
-        <p data-en="Apps that do play their own sound (Telegram, WhatsApp PWAs, etc.) are left untouched by default. Disable &quot;no duplicate&quot; if you intentionally want both sounds." data-es="Las apps que sí reproducen su propio sonido (Telegram, PWAs de WhatsApp, etc.) no se tocan por defecto. Desactiva &quot;no repetir&quot; si quieres ambos sonidos intencionadamente.">Apps that do play their own sound (Telegram, WhatsApp PWAs, etc.) are left untouched by default. Disable &quot;no duplicate&quot; if you intentionally want both sounds.</p>
+      <p>On GNOME, a notification only makes a sound when the app that sent it explicitly includes a <strong>sound-name</strong> or <strong>sound-file</strong> hint. Most apps never do — Warp, terminals, IDE builds, cron-like tools — so their notifications stay <strong>completely silent</strong>.</p>
+      <p>Apps that do play their own sound (Telegram, WhatsApp PWAs, etc.) are left untouched by default. Disable &quot;no duplicate&quot; if you intentionally want both sounds.</p>
     </div>
   </div>
 </section>
 
 <section id="features">
   <div class="container">
-    <h2><span>02</span><span data-en="Features" data-es="Características">Features</span></h2>
+    <h2><span>02</span><span>Features</span></h2>
     <div class="features">
       <div class="feature">
-        <h3 data-en="Play sound for any silent notification" data-es="Sonido para cualquier notificación silenciosa">Play sound for any silent notification</h3>
-        <p data-en="The daemon watches GNOME, GTK and freedesktop notification paths and plays your chosen sound when an app sends a notification without one." data-es="El daemon observa las rutas de notificaciones de GNOME, GTK y freedesktop, y reproduce tu sonido cuando una app envía una notificación sin uno.">The daemon watches GNOME, GTK and freedesktop notification paths and plays your chosen sound when an app sends a notification without one.</p>
+        <h3>Play sound for any silent notification</h3>
+        <p>The daemon watches GNOME, GTK and freedesktop notification paths and plays your chosen sound when an app sends a notification without one.</p>
       </div>
       <div class="feature">
-        <h3 data-en="No double sounds" data-es="Sin sonidos duplicados">No double sounds</h3>
-        <p data-en="Notifications with their own sound (or that declare <code>suppress-sound</code>) are respected." data-es="Se respetan las notificaciones con sonido propio (o que declaran <code>suppress-sound</code>).">Notifications with their own sound (or that declare <code>suppress-sound</code>) are respected.</p>
+        <h3>No double sounds</h3>
+        <p>Notifications with their own sound (or that declare <code>suppress-sound</code>) are respected.</p>
       </div>
       <div class="feature">
-        <h3 data-en="Per-app control" data-es="Control por aplicación">Per-app control</h3>
-        <p data-en="Enable/disable each app and give it its own sound. Apps are detected automatically and grouped by process (so AIMP shows as one entry, not one per song)." data-es="Activa/desactiva cada app y dale su propio sonido. Las apps se detectan automáticamente y se agrupan por proceso (así AIMP aparece como una sola entrada, no una por canción).">Enable/disable each app and give it its own sound. Apps are detected automatically and grouped by process (so AIMP shows as one entry, not one per song).</p>
+        <h3>Per-app control</h3>
+        <p>Enable/disable each app and give it its own sound. Apps are detected automatically and grouped by process (so AIMP shows as one entry, not one per song).</p>
       </div>
       <div class="feature">
-        <h3 data-en="App aliasing and fusion" data-es="Alias y fusión de apps">App aliasing and fusion</h3>
-        <p data-en="Rename detected apps to a friendly name (&quot;AIMP&quot; instead of a process id). Merge duplicates by renaming them to the same alias; undo from the info popover." data-es="Renombra las apps detectadas a un nombre amigable (&quot;AIMP&quot; en vez de un id de proceso). Fusiona duplicados renombrándolos al mismo alias; deshazlo desde el popover de información.">Rename detected apps to a friendly name (&quot;AIMP&quot; instead of a process id). Merge duplicates by renaming them to the same alias; undo from the info popover.</p>
+        <h3>App aliasing and fusion</h3>
+        <p>Rename detected apps to a friendly name (&quot;AIMP&quot; instead of a process id). Merge duplicates by renaming them to the same alias; undo from the info popover.</p>
       </div>
       <div class="feature">
-        <h3 data-en="Custom sound files" data-es="Archivos de sonido propios">Custom sound files</h3>
-        <p data-en="Add your own OGG/WAV/FLAC (and MP3/M4A/AAC with GStreamer, ffplay, mpv or mpg123)." data-es="Añade tus propios OGG/WAV/FLAC (y MP3/M4A/AAC con GStreamer, ffplay, mpv o mpg123).">Add your own OGG/WAV/FLAC (and MP3/M4A/AAC with GStreamer, ffplay, mpv or mpg123).</p>
+        <h3>Custom sound files</h3>
+        <p>Add your own OGG/WAV/FLAC (and MP3/M4A/AAC with GStreamer, ffplay, mpv or mpg123).</p>
       </div>
       <div class="feature">
-        <h3 data-en="Simple GTK4 settings app" data-es="App de ajustes GTK4 sencilla">Simple GTK4 settings app</h3>
-        <p data-en="Choose sounds, test them, manage apps and daemon state from one window." data-es="Elige sonidos, pruébalos, gestiona apps y el estado del daemon desde una ventana.">Choose sounds, test them, manage apps and daemon state from one window.</p>
+        <h3>Simple GTK4 settings app</h3>
+        <p>Choose sounds, test them, manage apps and daemon state from one window.</p>
       </div>
       <div class="feature">
-        <h3 data-en="Per-user install" data-es="Instalación por usuario">Per-user install</h3>
-        <p data-en="The source installer needs no sudo; Ubuntu/Debian users can also use the release package." data-es="El instalador desde fuente no necesita sudo; en Ubuntu/Debian también puedes usar el paquete de la release.">The source installer needs no sudo; Ubuntu/Debian users can also use the release package.</p>
+        <h3>Per-user install</h3>
+        <p>The source installer needs no sudo; Ubuntu/Debian users can also use the release package.</p>
       </div>
     </div>
   </div>
@@ -88,7 +92,7 @@
 
 <section id="screenshots">
   <div class="container">
-    <h2><span>03</span><span data-en="Screenshots" data-es="Capturas">Screenshots</span></h2>
+    <h2><span>03</span><span>Screenshots</span></h2>
     <div class="screenshots">
       <figure class="screenshot">
         <img src="screenshots/gui-1.png" alt="NotifySound settings window" loading="lazy" onclick="openLightbox(this.src)">
@@ -102,66 +106,66 @@
 
 <section id="install">
   <div class="container">
-    <h2><span>04</span><span data-en="Install" data-es="Instalación">Install</span></h2>
-    <p data-en="Ubuntu / Debian package (recommended):" data-es="Paquete para Ubuntu / Debian (recomendado):">Ubuntu / Debian package (recommended):</p>
+    <h2><span>04</span><span>Install</span></h2>
+    <p>Ubuntu / Debian package (recommended):</p>
     <div class="install-actions">
-      <a class="btn primary small" href="https://github.com/ChristianM023/notify-sound/releases/download/v0.1.10/notify-sound_0.1.10_all.deb" target="_blank" rel="noopener" data-en="Download .deb" data-es="Descargar .deb">Download .deb</a>
-      <a class="btn secondary small" href="https://github.com/ChristianM023/notify-sound/releases/download/v0.1.10/notify-sound_0.1.10_all.deb.sha256" target="_blank" rel="noopener" data-en="SHA-256 checksum" data-es="Checksum SHA-256">SHA-256 checksum</a>
+      <a class="btn primary small" href="https://github.com/ChristianM023/notify-sound/releases/download/v0.1.10/notify-sound_0.1.10_all.deb" target="_blank" rel="noopener">Download .deb</a>
+      <a class="btn secondary small" href="https://github.com/ChristianM023/notify-sound/releases/download/v0.1.10/notify-sound_0.1.10_all.deb.sha256" target="_blank" rel="noopener">SHA-256 checksum</a>
     </div>
     <pre><code>sudo dpkg -i ./notify-sound_0.1.10_all.deb
 sudo apt-get -f install</code></pre>
-    <p data-en="Or install per-user from source (no sudo):" data-es="O instala por usuario desde fuente (sin sudo):">Or install per-user from source (no sudo):</p>
-    <p data-en="Ubuntu / Debian dependencies:" data-es="Dependencias de Ubuntu / Debian:">Ubuntu / Debian dependencies:</p>
+    <p>Or install per-user from source (no sudo):</p>
+    <p>Ubuntu / Debian dependencies:</p>
     <pre><code>sudo apt install python3-gi gir1.2-gtk-4.0 gnome-session-canberra dbus</code></pre>
-    <p data-en="Then clone and install (no sudo needed):" data-es="Luego clona e instala (sin necesidad de sudo):">Then clone and install (no sudo needed):</p>
+    <p>Then clone and install (no sudo needed):</p>
     <pre><code>git clone https://github.com/ChristianM023/notify-sound.git
 cd notify-sound
 ./install.sh</code></pre>
-    <p data-en="Usage:" data-es="Uso:">Usage:</p>
+    <p>Usage:</p>
     <pre><code>notify-sound            # open the settings GUI
 notify-sound --daemon   # start the daemon
 notify-sound --quit     # stop the daemon</code></pre>
-    <p data-en="Other distributions: see the <a href='https://github.com/ChristianM023/notify-sound' target='_blank' rel='noopener'>README</a> for requirements and alternatives." data-es="Otras distribuciones: consulta el <a href='https://github.com/ChristianM023/notify-sound' target='_blank' rel='noopener'>README</a> para requisitos y alternativas.">Other distributions: see the <a href="https://github.com/ChristianM023/notify-sound" target="_blank" rel="noopener">README</a> for requirements and alternatives.</p>
+    <p>Other distributions: see the <a href="https://github.com/ChristianM023/notify-sound" target="_blank" rel="noopener">README</a> for requirements and alternatives.</p>
   </div>
 </section>
 
 <section id="donate">
   <div class="container">
-    <h2><span>05</span><span data-en="Support the project" data-es="Apoya el proyecto">Support the project</span></h2>
-    <p data-en="NotifySound is free and open source, for everyone. If it makes your day a little better and you want to say thanks, any contribution is welcome — but <strong>nothing is mandatory</strong>." data-es="NotifySound es gratuito y de código abierto, para todos. Si te alegra un poco el día y quieres dar las gracias, cualquier contribución es bienvenida — pero <strong>nada es obligatorio</strong>.">NotifySound is free and open source, for everyone. If it makes your day a little better and you want to say thanks, any contribution is welcome — but <strong>nothing is mandatory</strong>.</p>
+    <h2><span>05</span><span>Support the project</span></h2>
+    <p>NotifySound is free and open source, for everyone. If it makes your day a little better and you want to say thanks, any contribution is welcome — but <strong>nothing is mandatory</strong>.</p>
     <div class="donate-grid">
       <div class="donate-card">
         <div class="coin">₿ Bitcoin (BTC)</div>
         <img class="qr" src="qr/bitcoin.svg" alt="Bitcoin donation QR code">
         <div class="addr" id="addr-btc">bc1q69qmrtywvalgrtq6e5d8nw6h0dkt8z8q3w6u8l</div>
-        <button class="copy-btn" data-addr="addr-btc" data-en="Copy" data-es="Copiar">Copy</button>
+        <button class="copy-btn" data-addr="addr-btc" data-copied="Copied ✓">Copy</button>
       </div>
       <div class="donate-card">
         <div class="coin">Ξ Ethereum (ETH / ERC-20)</div>
         <img class="qr" src="qr/ethereum.svg" alt="Ethereum donation QR code">
         <div class="addr" id="addr-eth">0x7A764E024Ff5E04696928cFa6c959C67567c787D</div>
-        <button class="copy-btn" data-addr="addr-eth" data-en="Copy" data-es="Copiar">Copy</button>
+        <button class="copy-btn" data-addr="addr-eth" data-copied="Copied ✓">Copy</button>
       </div>
       <div class="donate-card">
         <div class="coin">₮ USDT (TRC-20 / Tron)</div>
         <img class="qr" src="qr/usdt-trc20.svg" alt="USDT TRC-20 donation QR code">
         <div class="addr" id="addr-usdt">TMxHZRTXHbzLd7Y1yNc5BbhfxLs3x7F4jf</div>
-        <button class="copy-btn" data-addr="addr-usdt" data-en="Copy" data-es="Copiar">Copy</button>
+        <button class="copy-btn" data-addr="addr-usdt" data-copied="Copied ✓">Copy</button>
       </div>
       <div class="donate-card">
         <div class="coin">◆ BNB (BEP-20 / BSC)</div>
         <img class="qr" src="qr/bnb-bep20.svg" alt="BNB BEP-20 donation QR code">
         <div class="addr" id="addr-bnb">0x7A764E024Ff5E04696928cFa6c959C67567c787D</div>
-        <button class="copy-btn" data-addr="addr-bnb" data-en="Copy" data-es="Copiar">Copy</button>
+        <button class="copy-btn" data-addr="addr-bnb" data-copied="Copied ✓">Copy</button>
       </div>
     </div>
-    <p class="donate-note" data-en="Please double-check the network before sending: USDT on TRC-20 (Tron), BNB on BSC (BEP-20). The project is non-commercial; donations are used only to keep development going." data-es="Por favor verifica la red antes de enviar: USDT en TRC-20 (Tron), BNB en BSC (BEP-20). El proyecto no es comercial; las donaciones se usan solo para mantener el desarrollo.">Please double-check the network before sending: USDT on TRC-20 (Tron), BNB on BSC (BEP-20). The project is non-commercial; donations are used only to keep development going.</p>
+    <p class="donate-note">Please double-check the network before sending: USDT on TRC-20 (Tron), BNB on BSC (BEP-20). The project is non-commercial; donations are used only to keep development going.</p>
   </div>
 </section>
 
 <footer>
   <div class="container">
-    <p data-en="NotifySound — MIT License. Made with <span class='heart'>♥</span> for the Linux community." data-es="NotifySound — Licencia MIT. Hecho con <span class='heart'>♥</span> para la comunidad Linux.">NotifySound — MIT License. Made with <span class="heart">♥</span> for the Linux community.</p>
+    <p>NotifySound — MIT License. Made with <span class="heart">♥</span> for the Linux community.</p>
     <p><a href="https://github.com/ChristianM023/notify-sound" target="_blank" rel="noopener">github.com/ChristianM023/notify-sound</a></p>
   </div>
 </footer>
@@ -185,91 +189,31 @@ document.addEventListener('keydown', function (e) {
 </script>
 
 <script>
-(function () {
-  var KEY = "notifysound-lang";
-  var saved = null;
-  try { saved = localStorage.getItem(KEY); } catch (e) {}
-  var lang = saved === "es" ? "es" : "en";
-
-  function appendSafe(parent, source) {
-    for (var i = 0; i < source.childNodes.length; i++) {
-      var child = source.childNodes[i];
-      if (child.nodeType === 3) {
-        parent.appendChild(document.createTextNode(child.nodeValue));
-        continue;
-      }
-      if (child.nodeType !== 1) continue;
-      var tag = child.tagName.toLowerCase();
-      var target = null;
-      if (tag === "strong" || tag === "code") {
-        target = document.createElement(tag);
-      } else if (tag === "a") {
-        var href = child.getAttribute("href") || "";
-        if (!/^https:\/\/github\.com\/ChristianM023\/notify-sound(?:\/|$)/.test(href)) {
-          appendSafe(parent, child);
-          continue;
-        }
-        target = document.createElement("a");
-        target.href = href;
-        target.target = "_blank";
-        target.rel = "noopener";
-      } else {
-        appendSafe(parent, child);
-        continue;
-      }
-      appendSafe(target, child);
-      parent.appendChild(target);
+document.querySelectorAll(".copy-btn").forEach(function (btn) {
+  btn.addEventListener("click", function () {
+    var text = document.getElementById(btn.getAttribute("data-addr")).textContent;
+    var original = btn.textContent;
+    var done = function () {
+      btn.textContent = btn.getAttribute("data-copied");
+      btn.classList.add("copied");
+      setTimeout(function () {
+        btn.textContent = original;
+        btn.classList.remove("copied");
+      }, 1500);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, done);
+    } else {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch (e) {}
+      document.body.removeChild(ta);
+      done();
     }
-  }
-
-  function setSafeTranslation(node, value) {
-    var parsed = new DOMParser().parseFromString(value || "", "text/html");
-    node.textContent = "";
-    appendSafe(node, parsed.body);
-  }
-
-  function apply() {
-    document.documentElement.lang = lang;
-    var nodes = document.querySelectorAll("[data-en]");
-    for (var i = 0; i < nodes.length; i++) {
-      setSafeTranslation(nodes[i], nodes[i].getAttribute("data-" + lang));
-    }
-    document.getElementById("langToggle").textContent = lang === "en" ? "ES" : "EN";
-  }
-
-  document.getElementById("langToggle").addEventListener("click", function () {
-    lang = lang === "en" ? "es" : "en";
-    try { localStorage.setItem(KEY, lang); } catch (e) {}
-    apply();
   });
-
-  document.querySelectorAll(".copy-btn").forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      var text = document.getElementById(btn.getAttribute("data-addr")).textContent;
-      var done = function () {
-        btn.textContent = btn.getAttribute("data-" + lang) === "Copy" ? "Copied ✓" : "Copiado ✓";
-        btn.classList.add("copied");
-        setTimeout(function () {
-          btn.textContent = btn.getAttribute("data-" + lang);
-          btn.classList.remove("copied");
-        }, 1500);
-      };
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(done, done);
-      } else {
-        var ta = document.createElement("textarea");
-        ta.value = text;
-        document.body.appendChild(ta);
-        ta.select();
-        try { document.execCommand("copy"); } catch (e) {}
-        document.body.removeChild(ta);
-        done();
-      }
-    });
-  });
-
-  apply();
-})();
+});
 </script>
 </body>
 </html>

@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NotifySound — Sonidos para notificaciones silenciosas</title>
+<meta name="description" content="NotifySound reproduce un sonido para las notificaciones de escritorio que no lo incluyen. Gratis y de código abierto para Linux.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔔</text></svg>">
+<link rel="canonical" href="https://christianm023.github.io/notify-sound/es/">
+<link rel="alternate" hreflang="es" href="https://christianm023.github.io/notify-sound/es/">
+<link rel="alternate" hreflang="en" href="https://christianm023.github.io/notify-sound/">
+<link rel="alternate" hreflang="x-default" href="https://christianm023.github.io/notify-sound/">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<nav>
+  <div class="container">
+    <a class="logo" href="#top"><span>◆</span> NotifySound</a>
+    <div class="nav-links">
+      <a href="#features">Características</a>
+      <a href="#install">Instalación</a>
+      <a href="#donate">Donar</a>
+      <a href="https://github.com/ChristianM023/notify-sound" target="_blank" rel="noopener">GitHub ↗</a>
+    </div>
+    <a class="lang-toggle" href="../index.html">English</a>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="container">
+    <h1><span>Notify</span>Sound</h1>
+    <p class="tagline">Sonidos para las notificaciones que se quedan en silencio.</p>
+    <div class="hero-badges">
+      <span class="badge green">100% Gratis y de Código Abierto</span>
+      <span class="badge">Licencia MIT</span>
+      <span class="badge">Linux / GNOME</span>
+      <span class="badge">Python + GTK4</span>
+    </div>
+    <div class="hero-cta">
+      <a class="btn primary" href="https://github.com/ChristianM023/notify-sound" target="_blank" rel="noopener">Ver en GitHub</a>
+      <a class="btn secondary" href="#install">Instalarlo ahora</a>
+    </div>
+  </div>
+</header>
+
+<section id="problem">
+  <div class="container">
+    <h2><span>01</span><span>El problema</span></h2>
+    <div class="problem-box">
+      <p>En GNOME, una notificación solo hace sonido cuando la app que la envía incluye explícitamente un hint <strong>sound-name</strong> o <strong>sound-file</strong>. La mayoría de apps nunca lo hacen — Warp, terminales, compilaciones de IDE, herramientas tipo cron — así que sus notificaciones quedan <strong>completamente mudas</strong>.</p>
+      <p>Las apps que sí reproducen su propio sonido (Telegram, PWAs de WhatsApp, etc.) no se tocan por defecto. Desactiva &quot;no repetir&quot; si quieres ambos sonidos intencionadamente.</p>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="container">
+    <h2><span>02</span><span>Características</span></h2>
+    <div class="features">
+      <div class="feature">
+        <h3>Sonido para cualquier notificación silenciosa</h3>
+        <p>El daemon observa las rutas de notificaciones de GNOME, GTK y freedesktop, y reproduce tu sonido cuando una app envía una notificación sin uno.</p>
+      </div>
+      <div class="feature">
+        <h3>Sin sonidos duplicados</h3>
+        <p>Se respetan las notificaciones con sonido propio (o que declaran <code>suppress-sound</code>).</p>
+      </div>
+      <div class="feature">
+        <h3>Control por aplicación</h3>
+        <p>Activa/desactiva cada app y dale su propio sonido. Las apps se detectan automáticamente y se agrupan por proceso (así AIMP aparece como una sola entrada, no una por canción).</p>
+      </div>
+      <div class="feature">
+        <h3>Alias y fusión de apps</h3>
+        <p>Renombra las apps detectadas a un nombre amigable (&quot;AIMP&quot; en vez de un id de proceso). Fusiona duplicados renombrándolos al mismo alias; deshazlo desde el popover de información.</p>
+      </div>
+      <div class="feature">
+        <h3>Archivos de sonido propios</h3>
+        <p>Añade tus propios OGG/WAV/FLAC (y MP3/M4A/AAC con GStreamer, ffplay, mpv o mpg123).</p>
+      </div>
+      <div class="feature">
+        <h3>App de ajustes GTK4 sencilla</h3>
+        <p>Elige sonidos, pruébalos, gestiona apps y el estado del daemon desde una ventana.</p>
+      </div>
+      <div class="feature">
+        <h3>Instalación por usuario</h3>
+        <p>El instalador desde fuente no necesita sudo; en Ubuntu/Debian también puedes usar el paquete de la release.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="screenshots">
+  <div class="container">
+    <h2><span>03</span><span>Capturas</span></h2>
+    <div class="screenshots">
+      <figure class="screenshot">
+        <img src="../screenshots/gui-1.png" alt="Ventana de ajustes de NotifySound" loading="lazy" onclick="openLightbox(this.src)">
+      </figure>
+      <figure class="screenshot">
+        <img src="../screenshots/gui-2.png" alt="Gestión de aplicaciones de NotifySound" loading="lazy" onclick="openLightbox(this.src)">
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section id="install">
+  <div class="container">
+    <h2><span>04</span><span>Instalación</span></h2>
+    <p>Paquete para Ubuntu / Debian (recomendado):</p>
+    <div class="install-actions">
+      <a class="btn primary small" href="https://github.com/ChristianM023/notify-sound/releases/download/v0.1.10/notify-sound_0.1.10_all.deb" target="_blank" rel="noopener">Descargar .deb</a>
+      <a class="btn secondary small" href="https://github.com/ChristianM023/notify-sound/releases/download/v0.1.10/notify-sound_0.1.10_all.deb.sha256" target="_blank" rel="noopener">Checksum SHA-256</a>
+    </div>
+    <pre><code>sudo dpkg -i ./notify-sound_0.1.10_all.deb
+sudo apt-get -f install</code></pre>
+    <p>O instala por usuario desde fuente (sin sudo):</p>
+    <p>Dependencias de Ubuntu / Debian:</p>
+    <pre><code>sudo apt install python3-gi gir1.2-gtk-4.0 gnome-session-canberra dbus</code></pre>
+    <p>Luego clona e instala (sin necesidad de sudo):</p>
+    <pre><code>git clone https://github.com/ChristianM023/notify-sound.git
+cd notify-sound
+./install.sh</code></pre>
+    <p>Uso:</p>
+    <pre><code>notify-sound            # abre la GUI de ajustes
+notify-sound --daemon   # inicia el daemon
+notify-sound --quit     # detiene el daemon</code></pre>
+    <p>Otras distribuciones: consulta el <a href="https://github.com/ChristianM023/notify-sound" target="_blank" rel="noopener">README</a> para requisitos y alternativas.</p>
+  </div>
+</section>
+
+<section id="donate">
+  <div class="container">
+    <h2><span>05</span><span>Apoya el proyecto</span></h2>
+    <p>NotifySound es gratuito y de código abierto, para todos. Si te alegra un poco el día y quieres dar las gracias, cualquier contribución es bienvenida — pero <strong>nada es obligatorio</strong>.</p>
+    <div class="donate-grid">
+      <div class="donate-card">
+        <div class="coin">₿ Bitcoin (BTC)</div>
+        <img class="qr" src="../qr/bitcoin.svg" alt="Código QR de donación Bitcoin">
+        <div class="addr" id="addr-btc">bc1q69qmrtywvalgrtq6e5d8nw6h0dkt8z8q3w6u8l</div>
+        <button class="copy-btn" data-addr="addr-btc" data-copied="Copiado ✓">Copiar</button>
+      </div>
+      <div class="donate-card">
+        <div class="coin">Ξ Ethereum (ETH / ERC-20)</div>
+        <img class="qr" src="../qr/ethereum.svg" alt="Código QR de donación Ethereum">
+        <div class="addr" id="addr-eth">0x7A764E024Ff5E04696928cFa6c959C67567c787D</div>
+        <button class="copy-btn" data-addr="addr-eth" data-copied="Copiado ✓">Copiar</button>
+      </div>
+      <div class="donate-card">
+        <div class="coin">₮ USDT (TRC-20 / Tron)</div>
+        <img class="qr" src="../qr/usdt-trc20.svg" alt="Código QR de donación USDT TRC-20">
+        <div class="addr" id="addr-usdt">TMxHZRTXHbzLd7Y1yNc5BbhfxLs3x7F4jf</div>
+        <button class="copy-btn" data-addr="addr-usdt" data-copied="Copiado ✓">Copiar</button>
+      </div>
+      <div class="donate-card">
+        <div class="coin">◆ BNB (BEP-20 / BSC)</div>
+        <img class="qr" src="../qr/bnb-bep20.svg" alt="Código QR de donación BNB BEP-20">
+        <div class="addr" id="addr-bnb">0x7A764E024Ff5E04696928cFa6c959C67567c787D</div>
+        <button class="copy-btn" data-addr="addr-bnb" data-copied="Copiado ✓">Copiar</button>
+      </div>
+    </div>
+    <p class="donate-note">Por favor verifica la red antes de enviar: USDT en TRC-20 (Tron), BNB en BSC (BEP-20). El proyecto no es comercial; las donaciones se usan solo para mantener el desarrollo.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p>NotifySound — Licencia MIT. Hecho con <span class="heart">♥</span> para la comunidad Linux.</p>
+    <p><a href="https://github.com/ChristianM023/notify-sound" target="_blank" rel="noopener">github.com/ChristianM023/notify-sound</a></p>
+  </div>
+</footer>
+
+<div id="lightbox" class="lightbox" onclick="closeLightbox()">
+  <img id="lightbox-img" src="" alt="">
+</div>
+
+<script>
+function openLightbox(src) {
+  var lb = document.getElementById('lightbox');
+  document.getElementById('lightbox-img').src = src;
+  lb.classList.add('active');
+}
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('active');
+}
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') closeLightbox();
+});
+</script>
+
+<script>
+document.querySelectorAll(".copy-btn").forEach(function (btn) {
+  btn.addEventListener("click", function () {
+    var text = document.getElementById(btn.getAttribute("data-addr")).textContent;
+    var original = btn.textContent;
+    var done = function () {
+      btn.textContent = btn.getAttribute("data-copied");
+      btn.classList.add("copied");
+      setTimeout(function () {
+        btn.textContent = original;
+        btn.classList.remove("copied");
+      }, 1500);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, done);
+    } else {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch (e) {}
+      document.body.removeChild(ta);
+      done();
+    }
+  });
+});
+</script>
+</body>
+</html>
