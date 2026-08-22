@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://christianm023.github.io/notify-sound/sitemap.xml
