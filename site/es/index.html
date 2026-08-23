@@ -71,9 +71,33 @@
   </div>
 </section>
 
+<section id="demo">
+  <div class="container">
+    <h2><span>02</span><span>Demo</span></h2>
+    <video class="demo-video" controls autoplay loop muted playsinline>
+      <source src="../demo/demo.mp4" type="video/mp4">
+    </video>
+    <p class="demo-caption">Activa el sonido para escuchar la notificación. Primero sin NotifySound (silenciosa), luego con NotifySound (suena).</p>
+  </div>
+</section>
+
+<section id="screenshots">
+  <div class="container">
+    <h2><span>03</span><span>Capturas</span></h2>
+    <div class="screenshots">
+      <figure class="screenshot">
+        <img src="../screenshots/gui-1.png" alt="Ventana de ajustes de NotifySound" loading="lazy" onclick="openLightbox(this.src)">
+      </figure>
+      <figure class="screenshot">
+        <img src="../screenshots/gui-2.png" alt="Gestión de aplicaciones de NotifySound" loading="lazy" onclick="openLightbox(this.src)">
+      </figure>
+    </div>
+  </div>
+</section>
+
 <section id="why">
   <div class="container">
-    <h2><span>02</span><span>¿Por qué existe esto?</span></h2>
+    <h2><span>04</span><span>¿Por qué existe esto?</span></h2>
     <div class="why-box">
       <p>Las notificaciones de GNOME no reproducen sonido por defecto. La especificación de notificaciones de freedesktop incluye hints opcionales (<code>sound-name</code>, <code>sound-file</code>), pero la mayoría de las apps nunca los establecen — así que terminales, compilaciones de IDE, herramientas tipo cron y muchas otras quedan completamente mudas.</p>
       <p>No es un bug: los mantenedores de GNOME han explicado que las apps dependen de que las notificaciones sean silenciosas (algunas reproducen su propio sonido y duplicarían), y que la nueva API de notificaciones sí traerá sonido por defecto. Hasta entonces, NotifySound cubre ese hueco.</p>
@@ -87,7 +111,7 @@
 
 <section id="features">
   <div class="container">
-    <h2><span>03</span><span>Características</span></h2>
+    <h2><span>05</span><span>Características</span></h2>
     <div class="features">
       <div class="feature">
         <h3>Sonido para cualquier notificación silenciosa</h3>
@@ -123,7 +147,7 @@
 
 <section id="compare">
   <div class="container">
-    <h2><span>04</span><span>NotifySound vs. la extensión de GNOME</span></h2>
+    <h2><span>06</span><span>NotifySound vs. la extensión de GNOME</span></h2>
     <p>Existe una <a href="https://extensions.gnome.org/extension/9759/notification-sound/" target="_blank" rel="noopener">extensión de GNOME Shell</a> que también añade sonido a las notificaciones. Esta es una comparación honesta:</p>
     <table class="compare">
       <thead>
@@ -145,7 +169,7 @@
 
 <section id="install">
   <div class="container">
-    <h2><span>05</span><span>Instalación</span></h2>
+    <h2><span>07</span><span>Instalación</span></h2>
     <p>Paquete para Ubuntu / Debian (recomendado):</p>
     <div class="install-actions">
       <a class="btn primary small" href="https://github.com/ChristianM023/notify-sound/releases/download/v0.1.10/notify-sound_0.1.10_all.deb" target="_blank" rel="noopener">Descargar .deb</a>
@@ -170,35 +194,11 @@ notify-sound --quit     # detiene el daemon</code></pre>
 
 <section id="quick-test">
   <div class="container">
-    <h2><span>06</span><span>Prueba rápida</span></h2>
+    <h2><span>08</span><span>Prueba rápida</span></h2>
     <p>Tras la instalación, comprueba que funciona en segundos:</p>
     <pre><code>notify-sound --daemon
 notify-send "Prueba" "Si oyes un sonido, funciona"</code></pre>
     <p>Si instalaste con el autostart activado (el valor por defecto), el daemon ya está en ejecución y la línea <code>notify-send</code> por sí sola es suficiente.</p>
-  </div>
-</section>
-
-<section id="demo">
-  <div class="container">
-    <h2><span>07</span><span>Demo</span></h2>
-    <video class="demo-video" controls autoplay loop muted playsinline>
-      <source src="../demo/demo.mp4" type="video/mp4">
-    </video>
-    <p class="demo-caption">Activa el sonido para escuchar la notificación. Primero sin NotifySound (silenciosa), luego con NotifySound (suena).</p>
-  </div>
-</section>
-
-<section id="screenshots">
-  <div class="container">
-    <h2><span>08</span><span>Capturas</span></h2>
-    <div class="screenshots">
-      <figure class="screenshot">
-        <img src="../screenshots/gui-1.png" alt="Ventana de ajustes de NotifySound" loading="lazy" onclick="openLightbox(this.src)">
-      </figure>
-      <figure class="screenshot">
-        <img src="../screenshots/gui-2.png" alt="Gestión de aplicaciones de NotifySound" loading="lazy" onclick="openLightbox(this.src)">
-      </figure>
-    </div>
   </div>
 </section>
 
