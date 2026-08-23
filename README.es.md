@@ -297,6 +297,23 @@ tu usuario puede leerlos. El archivo de lock de instancia
   0.1.1 o posterior; NotifySound procesa cada mensaje D-Bus inmediatamente.
   Si el reproductor arranca de inmediato pero el audio llega con retraso,
   repórtalo con detalles de tu shell y tu servidor de notificaciones.
+- **Dependencias en Fedora:** instálalas con
+  `sudo dnf install python3-gobject gtk4 libcanberra-gtk3 dbus` (GTK4 solo es
+  necesario para la GUI). Para reproducción de MP3/M4A, instala también
+  `sudo dnf install gstreamer1-plugins-base gstreamer1-plugins-good`.
+- **Dependencias en Arch:** instálalas con
+  `sudo pacman -S python-gobject gtk4 libcanberra dbus` (GTK4 solo es
+  necesario para la GUI), más `sudo pacman -S gst-plugins-base gst-plugins-good`
+  para reproducción de MP3/M4A. Hay un paquete AUR oficial planeado pero aún
+  no disponible — por ahora instala manualmente con `./install.sh`.
+- **`canberra-gtk-play` no encontrado:** el paquete que lo provee tiene un
+  nombre distinto según la distro — Debian: `gnome-session-canberra`, Fedora:
+  `libcanberra-gtk3`, Arch: `libcanberra`. Búscalo con
+  `dnf provides canberra-gtk-play` (Fedora) o `pacman -F canberra-gtk-play`
+  (Arch).
+- **`dbus-monitor` no encontrado:** es parte del paquete `dbus`, presente en
+  todos los escritorios. Si falta, instálalo con `sudo dnf install dbus`
+  (Fedora) o `sudo pacman -S dbus` (Arch).
 
 ## Desarrollo
 
