@@ -309,7 +309,7 @@ tu usuario puede leerlos. El archivo de lock de instancia
 - **`canberra-gtk-play` no encontrado:** el paquete que lo provee tiene un
   nombre distinto según la distro — Debian: `gnome-session-canberra`, Fedora:
   `libcanberra-gtk3`, Arch: `libcanberra`. Búscalo con
-  `dnf provides canberra-gtk-play` (Fedora) o `pacman -F canberra-gtk-play`
+  `dnf provides canberra-gtk-play` (Fedora) o `pacman -Fy canberra-gtk-play`
   (Arch).
 - **`dbus-monitor` no encontrado:** es parte del paquete `dbus`, presente en
   todos los escritorios. Si falta, instálalo con `sudo dnf install dbus`
