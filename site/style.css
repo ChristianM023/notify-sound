@@ -142,14 +142,21 @@ table.compare td { color: var(--fg-dim); }
 .lightbox.active { display: flex; }
 .lightbox img { max-width: 100%; max-height: 100%; border-radius: 6px; }
 
-/* Demo placeholder */
-.demo-placeholder {
-  border: 1px dashed var(--border);
+/* Demo video */
+.demo-video {
+  display: block;
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 48px 20px;
+  background: var(--bg-soft);
+}
+.demo-caption {
   text-align: center;
   color: var(--fg-dim);
-  font-size: 0.95rem;
+  font-size: 0.9rem;
+  margin-top: 10px;
 }
 
 /* Code */
