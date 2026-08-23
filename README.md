@@ -107,6 +107,26 @@ NotifySound runs a small daemon that listens to the desktop notification bus.
 When a notification arrives without a sound of its own, it plays the sound you
 configured in the GUI.
 
+Data flow of a notification:
+
+```text
+notification bus (org.freedesktop.Notifications / org.gtk.Notifications)
+        │
+        ▼
+dbus-monitor (eavesdrop=true)
+        │
+        ▼
+parser  ──►  app name resolution (desktop-entry → comm → synonym → app_name)
+        │
+        ▼
+play rules  ──►  enabled? → suppress-sound? → per-app? → no_duplicate? → play
+        │
+        ▼
+player  ──►  canberra-gtk-play (OGG/WAV/FLAC) → fallback (gst → ffplay → mpv → mpg123)
+```
+
+The daemon only reads notification metadata and never stores the message body.
+
 Notifications that already carry their own sound are left untouched, and
 notifications that declare `suppress-sound` — apps that manage their own
 audio, such as Chromium-based browsers for media — stay silent on purpose.
@@ -226,17 +246,25 @@ optional and tolerated when absent (v0.1.7 state files still load).
 
 ## Privacy
 
-NotifySound processes everything locally: it never connects to the network,
-sends no telemetry, and stores no notification content. The daemon reads only
-metadata (app name, hints) from the notification bus and keeps it in memory.
-The only per-app data written to disk is `app_meta` in
-`~/.config/notify-sound/state.json` (notification count, last-seen time,
-detected process) — user configuration, never the body of a notification.
+NotifySound processes everything locally: it never connects to the network
+and sends nothing to any server — no telemetry. The daemon reads only
+metadata (app name, hints) from the notification bus and keeps it in memory;
+the body of a notification is never stored. The only per-app data written to
+disk is `app_meta` in `~/.config/notify-sound/state.json` (notification
+count, last-seen time, detected process) — user configuration and state,
+never the content of a notification.
 
-To observe notifications, the daemon runs `dbus-monitor` in eavesdrop mode,
-the only reliable way to watch the notification bus from Python. Config and
-state files are written atomically (temp file + rename) with `O_NOFOLLOW` and
-mode 0600, so only your user can read them.
+## Security
+
+To observe notifications, the daemon runs `dbus-monitor` in eavesdrop mode
+(`eavesdrop=true`), the only reliable way to watch the notification bus from
+Python. NotifySound handles no secrets: no tokens, credentials or API keys,
+so there is no surface for secret leaks. Config and state files are written
+atomically (temp file + rename) with `O_NOFOLLOW` and mode 0600, so only
+your user can read them. The instance lock file
+(`$XDG_RUNTIME_DIR/notify-sound.pid.lock`, per-user fallback in
+`~/.cache/notify-sound/`) is opened the same way, with `O_NOFOLLOW` and mode
+0600.
 
 ## Troubleshooting
 
@@ -257,6 +285,23 @@ mode 0600, so only your user can read them.
   NotifySound processes each D-Bus message immediately. If the player starts
   immediately but audio is delayed, report it with details on your shell and
   notification server.
+- **Dependencies on Fedora:** install them with
+  `sudo dnf install python3-gobject gtk4 libcanberra-gtk3 dbus` (GTK4 is only
+  needed for the GUI). For MP3/M4A playback, also install
+  `sudo dnf install gstreamer1-plugins-base gstreamer1-plugins-good`.
+- **Dependencies on Arch:** install them with
+  `sudo pacman -S python-gobject gtk4 libcanberra dbus` (GTK4 is only needed
+  for the GUI), plus `sudo pacman -S gst-plugins-base gst-plugins-good` for
+  MP3/M4A playback. An official AUR package is planned but not available yet —
+  install manually with `./install.sh` for now.
+- **`canberra-gtk-play` not found:** the package that provides it has a
+  different name per distro — Debian: `gnome-session-canberra`, Fedora:
+  `libcanberra-gtk3`, Arch: `libcanberra`. Find it with
+  `dnf provides canberra-gtk-play` (Fedora) or `pacman -Fy canberra-gtk-play`
+  (Arch).
+- **`dbus-monitor` not found:** it is part of the `dbus` package, present on
+  every desktop. If it is missing, install it with `sudo dnf install dbus`
+  (Fedora) or `sudo pacman -S dbus` (Arch).
 
 ## Development
 

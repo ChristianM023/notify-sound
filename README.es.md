@@ -107,6 +107,27 @@ NotifySound ejecuta un daemon pequeño que escucha el bus de notificaciones
 del escritorio. Cuando llega una notificación sin sonido propio, reproduce el
 sonido que configuraste en la GUI.
 
+Flujo de datos de una notificación:
+
+```text
+bus de notificaciones (org.freedesktop.Notifications / org.gtk.Notifications)
+        │
+        ▼
+dbus-monitor (eavesdrop=true)
+        │
+        ▼
+parser ──► resolución del nombre de la app (desktop-entry → comm → synonym → app_name)
+        │
+        ▼
+reglas de reproducción ──► activado? → suppress-sound? → por app? → no_duplicate? → reproducir
+        │
+        ▼
+reproductor ──► canberra-gtk-play (OGG/WAV/FLAC) → fallback (gst → ffplay → mpv → mpg123)
+```
+
+El daemon solo lee los metadatos de la notificación y nunca almacena el cuerpo
+del mensaje.
+
 Las notificaciones que ya llevan su propio sonido no se tocan, y las
 notificaciones que declaran `suppress-sound` — apps que gestionan su propio
 audio, como los navegadores basados en Chromium para contenido multimedia —
@@ -233,19 +254,27 @@ de v0.1.7 siguen cargando).
 
 ## Privacidad
 
-NotifySound procesa todo localmente: nunca se conecta a la red, no envía
-telemetría y no almacena contenido de notificaciones. El daemon lee solo
-metadatos (nombre de la app, hints) del bus de notificaciones y los mantiene
-en memoria. Los únicos datos por app escritos en disco son `app_meta` en
+NotifySound procesa todo localmente: nunca se conecta a la red y no envía
+nada a ningún servidor — sin telemetría. El daemon lee solo metadatos
+(nombre de la app, hints) del bus de notificaciones y los mantiene en
+memoria; el cuerpo de una notificación nunca se almacena. Los únicos datos
+por app escritos en disco son `app_meta` en
 `~/.config/notify-sound/state.json` (número de notificaciones, última vez
-vista, proceso detectado) — configuración del usuario, nunca el cuerpo de una
-notificación.
+vista, proceso detectado) — configuración y estado del usuario, nunca el
+contenido de una notificación.
+
+## Seguridad
 
 Para observar las notificaciones, el daemon ejecuta `dbus-monitor` en modo
-eavesdrop, la única forma fiable de vigilar el bus de notificaciones desde
-Python. Los archivos de configuración y estado se escriben atómicamente
-(archivo temporal + rename) con `O_NOFOLLOW` y modo 0600, de modo que solo tu
-usuario puede leerlos.
+eavesdrop (`eavesdrop=true`), la única forma fiable de vigilar el bus de
+notificaciones desde Python. NotifySound no maneja secretos: sin tokens,
+credenciales ni API keys, por lo que no hay superficie para fugas de
+secretos. Los archivos de configuración y estado se escriben atómicamente
+(archivo temporal + rename) con `O_NOFOLLOW` y modo 0600, de modo que solo
+tu usuario puede leerlos. El archivo de lock de instancia
+(`$XDG_RUNTIME_DIR/notify-sound.pid.lock`, con fallback por usuario en
+`~/.cache/notify-sound/`) se abre de la misma forma, con `O_NOFOLLOW` y modo
+0600.
 
 ## Solución de problemas
 
@@ -268,6 +297,23 @@ usuario puede leerlos.
   0.1.1 o posterior; NotifySound procesa cada mensaje D-Bus inmediatamente.
   Si el reproductor arranca de inmediato pero el audio llega con retraso,
   repórtalo con detalles de tu shell y tu servidor de notificaciones.
+- **Dependencias en Fedora:** instálalas con
+  `sudo dnf install python3-gobject gtk4 libcanberra-gtk3 dbus` (GTK4 solo es
+  necesario para la GUI). Para reproducción de MP3/M4A, instala también
+  `sudo dnf install gstreamer1-plugins-base gstreamer1-plugins-good`.
+- **Dependencias en Arch:** instálalas con
+  `sudo pacman -S python-gobject gtk4 libcanberra dbus` (GTK4 solo es
+  necesario para la GUI), más `sudo pacman -S gst-plugins-base gst-plugins-good`
+  para reproducción de MP3/M4A. Hay un paquete AUR oficial planeado pero aún
+  no disponible — por ahora instala manualmente con `./install.sh`.
+- **`canberra-gtk-play` no encontrado:** el paquete que lo provee tiene un
+  nombre distinto según la distro — Debian: `gnome-session-canberra`, Fedora:
+  `libcanberra-gtk3`, Arch: `libcanberra`. Búscalo con
+  `dnf provides canberra-gtk-play` (Fedora) o `pacman -Fy canberra-gtk-play`
+  (Arch).
+- **`dbus-monitor` no encontrado:** es parte del paquete `dbus`, presente en
+  todos los escritorios. Si falta, instálalo con `sudo dnf install dbus`
+  (Fedora) o `sudo pacman -S dbus` (Arch).
 
 ## Desarrollo
 
