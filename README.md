@@ -107,6 +107,26 @@ NotifySound runs a small daemon that listens to the desktop notification bus.
 When a notification arrives without a sound of its own, it plays the sound you
 configured in the GUI.
 
+Data flow of a notification:
+
+```text
+notification bus (org.freedesktop.Notifications / org.gtk.Notifications)
+        │
+        ▼
+dbus-monitor (eavesdrop=true)
+        │
+        ▼
+parser  ──►  app name resolution (desktop-entry → comm → synonym → app_name)
+        │
+        ▼
+play rules  ──►  enabled? → suppress-sound? → per-app? → no_duplicate? → play
+        │
+        ▼
+player  ──►  canberra-gtk-play (OGG/WAV/FLAC) → fallback (gst → ffplay → mpv → mpg123)
+```
+
+The daemon only reads notification metadata and never stores the message body.
+
 Notifications that already carry their own sound are left untouched, and
 notifications that declare `suppress-sound` — apps that manage their own
 audio, such as Chromium-based browsers for media — stay silent on purpose.
