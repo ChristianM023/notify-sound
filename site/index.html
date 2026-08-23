@@ -215,9 +215,17 @@ notify-send "Test" "If you hear a sound, it works"</code></pre>
   </div>
 </section>
 
+<section id="privacy">
+  <div class="container">
+    <h2><span>10</span><span>Privacy</span></h2>
+    <p>NotifySound runs entirely on your machine — it never connects to the network, sends no telemetry, and stores no notification content. It reads only notification metadata (app name, hints) in memory; the only thing written to disk is per-app state (notification count, last-seen time) in <code>~/.config/notify-sound/state.json</code>, never the body of a notification. Config and state files are written atomically with <code>O_NOFOLLOW</code> and mode <code>0600</code>, so only your user can read them.</p>
+    <p>See the <a href="https://github.com/ChristianM023/notify-sound#privacy" target="_blank" rel="noopener">README</a> for the full privacy and security details.</p>
+  </div>
+</section>
+
 <section id="donate">
   <div class="container">
-    <h2><span>10</span><span>Support the project</span></h2>
+    <h2><span>11</span><span>Support the project</span></h2>
     <p>NotifySound is free and open source, for everyone. If it makes your day a little better and you want to say thanks, any contribution is welcome — but <strong>nothing is mandatory</strong>.</p>
     <div class="donate-grid">
       <div class="donate-card">

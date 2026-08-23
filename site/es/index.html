@@ -215,9 +215,17 @@ notify-send "Prueba" "Si oyes un sonido, funciona"</code></pre>
   </div>
 </section>
 
+<section id="privacy">
+  <div class="container">
+    <h2><span>10</span><span>Privacidad</span></h2>
+    <p>NotifySound se ejecuta totalmente en tu máquina — nunca se conecta a la red, no envía telemetría y no almacena el contenido de las notificaciones. Lee solo metadatos (nombre de la app, hints) en memoria; lo único que se escribe en disco es el estado por app (contador de notificaciones, última vez vista) en <code>~/.config/notify-sound/state.json</code>, nunca el cuerpo de una notificación. Los archivos de configuración y estado se escriben atómicamente con <code>O_NOFOLLOW</code> y modo <code>0600</code>, de modo que solo tu usuario puede leerlos.</p>
+    <p>Consulta el <a href="https://github.com/ChristianM023/notify-sound/blob/main/README.es.md#privacidad" target="_blank" rel="noopener">README</a> para los detalles completos de privacidad y seguridad.</p>
+  </div>
+</section>
+
 <section id="donate">
   <div class="container">
-    <h2><span>10</span><span>Apoya el proyecto</span></h2>
+    <h2><span>11</span><span>Apoya el proyecto</span></h2>
     <p>NotifySound es gratuito y de código abierto, para todos. Si te alegra un poco el día y quieres dar las gracias, cualquier contribución es bienvenida — pero <strong>nada es obligatorio</strong>.</p>
     <div class="donate-grid">
       <div class="donate-card">
