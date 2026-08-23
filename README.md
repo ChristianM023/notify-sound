@@ -226,17 +226,25 @@ optional and tolerated when absent (v0.1.7 state files still load).
 
 ## Privacy
 
-NotifySound processes everything locally: it never connects to the network,
-sends no telemetry, and stores no notification content. The daemon reads only
-metadata (app name, hints) from the notification bus and keeps it in memory.
-The only per-app data written to disk is `app_meta` in
-`~/.config/notify-sound/state.json` (notification count, last-seen time,
-detected process) — user configuration, never the body of a notification.
+NotifySound processes everything locally: it never connects to the network
+and sends nothing to any server — no telemetry. The daemon reads only
+metadata (app name, hints) from the notification bus and keeps it in memory;
+the body of a notification is never stored. The only per-app data written to
+disk is `app_meta` in `~/.config/notify-sound/state.json` (notification
+count, last-seen time, detected process) — user configuration and state,
+never the content of a notification.
 
-To observe notifications, the daemon runs `dbus-monitor` in eavesdrop mode,
-the only reliable way to watch the notification bus from Python. Config and
-state files are written atomically (temp file + rename) with `O_NOFOLLOW` and
-mode 0600, so only your user can read them.
+## Security
+
+To observe notifications, the daemon runs `dbus-monitor` in eavesdrop mode
+(`eavesdrop=true`), the only reliable way to watch the notification bus from
+Python. NotifySound handles no secrets: no tokens, credentials or API keys,
+so there is no surface for secret leaks. Config and state files are written
+atomically (temp file + rename) with `O_NOFOLLOW` and mode 0600, so only
+your user can read them. The instance lock file
+(`$XDG_RUNTIME_DIR/notify-sound.pid.lock`, per-user fallback in
+`~/.cache/notify-sound/`) is opened the same way, with `O_NOFOLLOW` and mode
+0600.
 
 ## Troubleshooting
 
