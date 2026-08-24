@@ -212,17 +212,26 @@ def _dbus_tokens(lines):
                 in_string = True
                 _pending_string_kind = "variant_string"
                 position += len('variant string "')
-            elif line.startswith("variant byte ", position):
-                rest = line[position + len("variant byte "):]
-                match = _VARIANT_BYTE_RE.match(rest)
-                if match:
-                    try:
-                        yield "variant_byte", int(match.group(0))
-                    except ValueError:
-                        pass
-                    position += len("variant byte ") + len(match.group(0))
+            elif line.startswith("variant", position):
+                # dbus-monitor alinea los tipos a una columna fija:
+                # entre `variant` y `byte` puede haber varios espacios
+                # (p. ej. `variant             byte 2`).
+                ws = position + len("variant")
+                while ws < len(line) and line[ws] in " \t":
+                    ws += 1
+                if line.startswith("byte ", ws):
+                    rest = line[ws + len("byte "):]
+                    match = _VARIANT_BYTE_RE.match(rest)
+                    if match:
+                        try:
+                            yield "variant_byte", int(match.group(0))
+                        except ValueError:
+                            pass
+                        position = ws + len("byte ") + len(match.group(0))
+                    else:
+                        position = ws + len("byte ")
                 else:
-                    position += len("variant byte ")
+                    position += 1
             elif line.startswith('string "', position):
                 in_string = True
                 _pending_string_kind = "string"

@@ -23,7 +23,10 @@ def _hint_entry(hint):
     else:
         key, value = hint, "message"
     if isinstance(value, int) and not isinstance(value, bool):
-        value_line = f"         variant byte {value}\n"
+        # Formato real de dbus-monitor: alinea los tipos a una columna
+        # fija, dejando varios espacios entre `variant` y `byte`
+        # (p. ej. `variant             byte 2`).
+        value_line = f"         variant             byte {value}\n"
     else:
         value_line = f'         variant string "{value}"\n'
     return (
@@ -828,6 +831,39 @@ class DaemonTests(ConfigTests):
                 _lines(payload)
             )
             self.assertEqual(urgency, value, msg=str(value))
+
+    def test_parse_block_urgency_real_dbus_monitor_format(self):
+        # Formato real verificado empíricamente: dbus-monitor alinea los
+        # tipos a una columna fija (varios espacios entre `variant` y
+        # `byte`) e intercala otros tipos de hint (p. ej. `int64`).
+        payload = (
+            "method call time=1 sender=:1.1445 -> "
+            "destination=:1.33 serial=1 path=/org/freedesktop/Notifications; "
+            "interface=org.freedesktop.Notifications; member=Notify\n"
+            '   string "notify-send"\n'
+            "   uint32 0\n"
+            '   string ""\n'
+            '   string "Test"\n'
+            '   string "Critica"\n'
+            "   array [\n"
+            "   ]\n"
+            "   array [\n"
+            "      dict entry(\n"
+            '         string "urgency"\n'
+            "         variant             byte 2\n"
+            "      )\n"
+            "      dict entry(\n"
+            '         string "sender-pid"\n'
+            "         variant             int64 198892\n"
+            "      )\n"
+            "   ]\n"
+            "   int32 -1\n"
+        ).encode()
+        app_name, hints, desktop_entry, urgency = daemon._parse_block(
+            _lines(payload)
+        )
+        self.assertEqual(urgency, 2)
+        self.assertIn("urgency", hints)
 
     def test_urgency_without_mapping_keeps_current_playback(self):
         instance, monitor = self.make_daemon(
