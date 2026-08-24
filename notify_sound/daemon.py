@@ -543,7 +543,13 @@ class NotifyDaemon:
             return
         choice = app_cfg.get("sound") or cfg.get("sound")
         if choice:
-            player.play_choice(choice)
+            # Volumen por app (0-100): se aplica tanto al sonido propio de
+            # la app como al global. Ausente o None -> 100 (comportamiento
+            # actual); config ya normaliza valores inválidos a 100.
+            volume = app_cfg.get("volume")
+            if volume is None:
+                volume = 100
+            player.play_choice(choice, volume=volume)
 
     def on_signal(self, signum, frame):
         self.stop()

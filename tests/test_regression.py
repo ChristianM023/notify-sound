@@ -569,7 +569,7 @@ class DaemonTests(ConfigTests):
         )
         with mock.patch.object(player, "play_choice") as play:
             instance._reader(monitor)
-        play.assert_called_once_with("message")
+        play.assert_called_once_with("message", volume=100)
         self.assertEqual(instance.seen, {"notify-send"})
 
     def test_two_notifications_are_both_processed(self):
@@ -598,7 +598,7 @@ class DaemonTests(ConfigTests):
         )
         with mock.patch.object(player, "play_choice") as play:
             instance._reader(monitor)
-        play.assert_called_once_with("message")
+        play.assert_called_once_with("message", volume=100)
 
     def test_multiline_body_processes_once_and_skips_shell_reemission(self):
         body = "web.whatsapp.com\n\nV"
@@ -611,7 +611,7 @@ class DaemonTests(ConfigTests):
         instance, monitor = self.make_daemon(payload)
         with mock.patch.object(player, "play_choice") as play:
             instance._reader(monitor)
-        play.assert_called_once_with("message")
+        play.assert_called_once_with("message", volume=100)
 
     def test_string_content_cannot_fake_message_terminator(self):
         instance, monitor = self.make_daemon(
@@ -640,7 +640,7 @@ class DaemonTests(ConfigTests):
         )
         with mock.patch.object(player, "play_choice") as play:
             instance._reader(monitor)
-        play.assert_called_once_with("message")
+        play.assert_called_once_with("message", volume=100)
         self.assertEqual(instance.seen, {"org.gnome.Ptyxis"})
 
     def test_gtk_notification_respects_suppress_sound(self):
@@ -663,7 +663,7 @@ class DaemonTests(ConfigTests):
         )
         with mock.patch.object(player, "play_choice") as play:
             instance._reader(monitor)
-        play.assert_called_once_with("message")
+        play.assert_called_once_with("message", volume=100)
         self.assertEqual(instance.seen, {"aimp"})
 
     def test_desktop_entry_hint_is_ignored_when_empty_or_too_long(self):
@@ -742,7 +742,7 @@ class DaemonTests(ConfigTests):
             with mock.patch.object(player, "play_choice") as play:
                 instance._reader(monitor)
         cmdline.assert_not_called()
-        play.assert_called_once_with("message")
+        play.assert_called_once_with("message", volume=100)
         self.assertEqual(instance.seen, {"aimp"})
         state = config.load_state()
         self.assertEqual(state["app_meta"]["aimp"]["comm"], "aimp")
@@ -762,7 +762,7 @@ class DaemonTests(ConfigTests):
             )
             with mock.patch.object(player, "play_choice") as play:
                 instance._reader(monitor)
-        play.assert_called_once_with("message")
+        play.assert_called_once_with("message", volume=100)
         self.assertEqual(instance.seen, {"aimp"})
 
     def test_sender_pid_resolution_falls_back_to_cmdline_when_comm_truncated(self):
@@ -816,7 +816,7 @@ class DaemonTests(ConfigTests):
             )
             with mock.patch.object(player, "play_choice") as play:
                 instance._reader(monitor)
-        play.assert_called_once_with("message")
+        play.assert_called_once_with("message", volume=100)
         self.assertEqual(instance.seen, {"aimp"})
 
     def test_app_meta_persists_comm_and_count_after_record(self):
@@ -874,7 +874,7 @@ class DaemonTests(ConfigTests):
         )
         with mock.patch.object(player, "play_choice") as play:
             instance._reader(monitor)
-        play.assert_called_once_with("message")
+        play.assert_called_once_with("message", volume=100)
 
     def test_suppress_sound_is_always_silent(self):
         self.write_config({"no_duplicate": False})
@@ -903,7 +903,95 @@ class DaemonTests(ConfigTests):
         )
         with mock.patch.object(player, "play_choice") as play:
             instance._reader(monitor)
-        play.assert_called_once_with(app_sound)
+        play.assert_called_once_with(app_sound, volume=100)
+
+    def test_app_volume_is_passed_to_player(self):
+        self.write_config(
+            {
+                "sound": "message",
+                "apps": {
+                    "warp": {"enabled": True, "sound": None, "volume": 50}
+                },
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification("warp", trailing_blank=False)
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("message", volume=50)
+
+    def test_app_volume_applies_to_app_sound(self):
+        app_sound = "/tmp/notify-sound-test-I-Feel-Good.wav"
+        self.write_config(
+            {
+                "sound": "message",
+                "apps": {
+                    "warp": {
+                        "enabled": True,
+                        "sound": app_sound,
+                        "volume": 50,
+                    }
+                },
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification("warp", trailing_blank=False)
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with(app_sound, volume=50)
+
+    def test_app_without_volume_plays_at_default_100(self):
+        self.write_config(
+            {
+                "sound": "message",
+                "apps": {"warp": {"enabled": True, "sound": None}},
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification("warp", trailing_blank=False)
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("message", volume=100)
+
+    def test_zero_volume_app_is_silent_end_to_end(self):
+        self.write_config(
+            {
+                "sound": "message",
+                "apps": {
+                    "warp": {"enabled": True, "sound": None, "volume": 0}
+                },
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification("warp", trailing_blank=False)
+        )
+        with mock.patch.object(
+            player, "play_sound", wraps=player.play_sound
+        ) as play_sound, mock.patch.object(
+            player.subprocess, "Popen"
+        ) as popen:
+            instance._reader(monitor)
+        play_sound.assert_called_once_with("message", volume=0)
+        popen.assert_not_called()
+
+    def test_invalid_volume_in_config_is_normalized_to_100(self):
+        self.write_config(
+            {
+                "sound": "message",
+                "apps": {
+                    "warp": {"enabled": True, "sound": None, "volume": "50"}
+                },
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification("warp", trailing_blank=False)
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("message", volume=100)
 
     def test_missing_canberra_does_not_stop_reader(self):
         payload = notification("first") + notification(
