@@ -2293,5 +2293,149 @@ class GuiVolumeTests(unittest.TestCase):
         self.assertTrue(entry["volume_scale"].get_sensitive())
 
 
+class GuiUrgencyTests(unittest.TestCase):
+    """Tests de los controles de sonido por urgencia (URG-001)."""
+
+    LEVELS = ("low", "normal", "critical")
+
+    def _urgency_window(self, cfg):
+        from notify_sound import gui
+
+        window = _bare_window(cfg)
+        window.theme_ids = ["message", "bell"]
+        window.urgency_rows = {
+            level: {"dropdown": mock.Mock(), "test_button": mock.Mock()}
+            for level in self.LEVELS
+        }
+        return window
+
+    def test_urgency_dropdowns_initialize_from_config(self):
+        from notify_sound import gui
+
+        cfg = {
+            "urgency_sounds": {
+                "low": None,
+                "normal": "message",
+                "critical": "/tmp/critical.wav",
+            },
+            "custom_sounds": ["/tmp/critical.wav"],
+        }
+        window = self._urgency_window(cfg)
+        window._populate_urgency_dropdowns()
+        for level, entry in window.urgency_rows.items():
+            dropdown = entry["dropdown"]
+            dropdown.set_model.assert_called_once()
+            model = dropdown.set_model.call_args.args[0]
+            self.assertEqual(model.get_string(0), gui.NO_OVERRIDE)
+            self.assertEqual(model.get_string(1), "message")
+            self.assertEqual(model.get_string(2), "bell")
+            self.assertEqual(model.get_string(3), "critical.wav")
+        # Índices: low -> 0 (Sin override), normal -> 1 (message),
+        # critical -> 3 (custom sound).
+        self.assertEqual(
+            window.urgency_rows["low"]["dropdown"].set_selected.call_args.args[0], 0
+        )
+        self.assertEqual(
+            window.urgency_rows["normal"]["dropdown"].set_selected.call_args.args[0], 1
+        )
+        self.assertEqual(
+            window.urgency_rows["critical"]["dropdown"].set_selected.call_args.args[0], 3
+        )
+
+    def test_urgency_change_persists_and_saves(self):
+        from notify_sound import gui
+
+        cfg = {
+            "urgency_sounds": {"low": None, "normal": None, "critical": None},
+        }
+        window = self._urgency_window(cfg)
+        dropdown = window.urgency_rows["critical"]["dropdown"]
+        dropdown.get_selected.return_value = 1  # "message"
+        with mock.patch.object(window, "_save") as save:
+            gui.NotifyWindow._on_urgency_sound_changed(
+                window, dropdown, None, "critical"
+            )
+        save.assert_called_once_with()
+        self.assertEqual(cfg["urgency_sounds"]["critical"], "message")
+
+    def test_urgency_change_to_no_override_saves_none(self):
+        from notify_sound import gui
+
+        cfg = {
+            "urgency_sounds": {"low": None, "normal": None, "critical": "message"},
+        }
+        window = self._urgency_window(cfg)
+        dropdown = window.urgency_rows["critical"]["dropdown"]
+        dropdown.get_selected.return_value = 0  # "Sin override"
+        with mock.patch.object(window, "_save") as save:
+            gui.NotifyWindow._on_urgency_sound_changed(
+                window, dropdown, None, "critical"
+            )
+        save.assert_called_once_with()
+        self.assertIsNone(cfg["urgency_sounds"]["critical"])
+
+    def test_urgency_change_ignored_while_rebuilding(self):
+        from notify_sound import gui
+
+        cfg = {
+            "urgency_sounds": {"low": None, "normal": None, "critical": None},
+        }
+        window = self._urgency_window(cfg)
+        window._rebuilding = True
+        dropdown = window.urgency_rows["critical"]["dropdown"]
+        dropdown.get_selected.return_value = 1
+        with mock.patch.object(window, "_save") as save:
+            gui.NotifyWindow._on_urgency_sound_changed(
+                window, dropdown, None, "critical"
+            )
+        save.assert_not_called()
+        self.assertIsNone(cfg["urgency_sounds"]["critical"])
+
+    def test_urgency_test_button_plays_selected_sound(self):
+        from notify_sound import gui
+
+        cfg = {
+            "urgency_sounds": {
+                "low": None,
+                "normal": "message",
+                "critical": "/tmp/critical.wav",
+            },
+        }
+        window = _bare_window(cfg)
+        with mock.patch.object(player, "play_choice") as play:
+            window._on_test_urgency(None, "normal")
+            window._on_test_urgency(None, "critical")
+            window._on_test_urgency(None, "low")
+        play.assert_has_calls(
+            [
+                mock.call("message"),
+                mock.call("/tmp/critical.wav"),
+            ]
+        )
+        self.assertEqual(play.call_count, 2)
+
+    def test_rebuild_all_dropdowns_populates_urgency_pickers(self):
+        from notify_sound import gui
+
+        cfg = {
+            "sound": "message",
+            "urgency_sounds": {"low": None, "normal": "message", "critical": None},
+            "custom_sounds": [],
+            "apps": {},
+        }
+        window = self._urgency_window(cfg)
+        window.sound_dropdown = mock.Mock()
+        window.app_rows = {}
+        window._rebuild_all_dropdowns()
+        for level, entry in window.urgency_rows.items():
+            entry["dropdown"].set_model.assert_called_once()
+        self.assertEqual(
+            window.urgency_rows["normal"]["dropdown"].set_selected.call_args.args[0], 1
+        )
+        self.assertEqual(
+            window.urgency_rows["low"]["dropdown"].set_selected.call_args.args[0], 0
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
