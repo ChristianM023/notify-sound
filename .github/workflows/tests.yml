@@ -30,11 +30,13 @@ jobs:
             dbus \
             gir1.2-gtk-4.0 \
             gnome-session-canberra \
-            python3-gi
+            python3-gi \
+            xvfb
       - name: Run regression suite
         env:
           PYTHONDONTWRITEBYTECODE: "1"
-        run: python3 -m unittest discover -s tests -v
+          GDK_BACKEND: "x11"
+        run: xvfb-run -a python3 -m unittest discover -s tests -v
       - name: Build Debian package
         run: ./build-deb.sh
       - name: Inspect Debian package
