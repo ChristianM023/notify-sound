@@ -247,6 +247,21 @@ class NotifyWindow(Gtk.ApplicationWindow):
         app_sound_dropdown.connect(
             "notify::selected", self._on_app_sound_changed, app_name
         )
+        volume_adjustment = Gtk.Adjustment(
+            value=app_cfg.get("volume", 100), lower=0, upper=100,
+            step_increment=1, page_increment=10, page_size=0,
+        )
+        volume_scale = Gtk.Scale(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            adjustment=volume_adjustment,
+        )
+        volume_scale.set_tooltip_text("Volumen de esta aplicación (0-100 %)")
+        volume_scale.props.valign = Gtk.Align.CENTER
+        volume_scale.set_hexpand(False)
+        volume_scale.set_size_request(120, -1)
+        volume_scale.connect(
+            "value-changed", self._on_app_volume_changed, app_name
+        )
         app_test_button = Gtk.Button()
         app_test_button.set_icon_name("media-playback-start-symbolic")
         app_test_button.set_tooltip_text("Probar")
@@ -272,6 +287,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
         remove_button.connect("clicked", self._on_app_remove, app_name)
         box.append(name_label)
         box.append(app_sound_dropdown)
+        box.append(volume_scale)
         box.append(app_test_button)
         box.append(rename_button)
         box.append(info_button)
@@ -283,6 +299,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
             "row": row,
             "switch": app_switch,
             "dropdown": app_sound_dropdown,
+            "volume_scale": volume_scale,
             "name_label": name_label,
         }
         self._populate_app_dropdown(app_name, self.app_rows[app_name])
@@ -428,6 +445,8 @@ class NotifyWindow(Gtk.ApplicationWindow):
             target_cfg["enabled"] = False
         if target_cfg.get("sound") is None and source_cfg.get("sound") is not None:
             target_cfg["sound"] = source_cfg["sound"]
+        if "volume" not in target_cfg and "volume" in source_cfg:
+            target_cfg["volume"] = source_cfg["volume"]
         synonyms = list(target_cfg.get("synonyms") or [])
         if source not in synonyms:
             synonyms.append(source)
@@ -681,6 +700,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
         for entry in self.app_rows.values():
             entry["switch"].set_sensitive(enabled)
             entry["dropdown"].set_sensitive(enabled)
+            entry["volume_scale"].set_sensitive(enabled)
 
     def _refresh_state(self):
         running = config.is_running()
@@ -789,11 +809,20 @@ class NotifyWindow(Gtk.ApplicationWindow):
             entry["sound"] = self._choice_value(selected - 1)
         self._save()
 
+    def _on_app_volume_changed(self, scale, app_name):
+        if self._rebuilding:
+            return
+        entry = self.cfg["apps"].setdefault(
+            app_name, {"enabled": True, "sound": None}
+        )
+        entry["volume"] = round(scale.get_value())
+        self._save()
+
     def _on_test_app(self, button, app_name):
         app_cfg = self.cfg.get("apps", {}).get(app_name, {})
         choice = app_cfg.get("sound") or self.cfg.get("sound")
         if choice:
-            player.play_choice(choice)
+            player.play_choice(choice, volume=app_cfg.get("volume", 100))
 
     def _on_start_daemon(self, button):
         _spawn([sys.executable, _entrypoint(), "--daemon"])
