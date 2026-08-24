@@ -829,7 +829,7 @@ class DaemonTests(ConfigTests):
             )
             self.assertEqual(urgency, value, msg=str(value))
 
-    def test_urgency_hint_does_not_change_playback_yet(self):
+    def test_urgency_without_mapping_keeps_current_playback(self):
         instance, monitor = self.make_daemon(
             notification(
                 "warp", hints=(("urgency", 2),), trailing_blank=False
@@ -837,6 +837,203 @@ class DaemonTests(ConfigTests):
         )
         with mock.patch.object(player, "play_choice") as play:
             instance._reader(monitor)
+        play.assert_called_once_with("message", volume=100)
+
+    def test_urgency_critical_overrides_app_and_global_sound(self):
+        critical_sound = "/tmp/notify-sound-test-critical.wav"
+        self.write_config(
+            {
+                "sound": "message",
+                "urgency_sounds": {
+                    "low": None,
+                    "normal": None,
+                    "critical": critical_sound,
+                },
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification(
+                "warp", hints=(("urgency", 2),), trailing_blank=False
+            )
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with(critical_sound, volume=100)
+
+    def test_urgency_low_and_normal_override_sound(self):
+        low_sound = "/tmp/notify-sound-test-low.wav"
+        normal_sound = "/tmp/notify-sound-test-normal.wav"
+        self.write_config(
+            {
+                "sound": "message",
+                "urgency_sounds": {
+                    "low": low_sound,
+                    "normal": normal_sound,
+                    "critical": None,
+                },
+            }
+        )
+        for urgency, expected in ((0, low_sound), (1, normal_sound)):
+            instance, monitor = self.make_daemon(
+                notification(
+                    "warp",
+                    hints=(("urgency", urgency),),
+                    trailing_blank=False,
+                )
+            )
+            with mock.patch.object(player, "play_choice") as play:
+                instance._reader(monitor)
+            play.assert_called_once_with(expected, volume=100)
+
+    def test_urgency_without_mapping_keeps_app_sound(self):
+        app_sound = "/tmp/notify-sound-test-I-Feel-Good.wav"
+        self.write_config(
+            {
+                "sound": "message",
+                "urgency_sounds": {
+                    "low": None,
+                    "normal": None,
+                    "critical": None,
+                },
+                "apps": {"warp": {"enabled": True, "sound": app_sound}},
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification(
+                "warp", hints=(("urgency", 2),), trailing_blank=False
+            )
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with(app_sound, volume=100)
+
+    def test_urgency_absent_ignores_urgency_sounds(self):
+        critical_sound = "/tmp/notify-sound-test-critical.wav"
+        self.write_config(
+            {
+                "sound": "message",
+                "urgency_sounds": {
+                    "low": None,
+                    "normal": None,
+                    "critical": critical_sound,
+                },
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification("warp", trailing_blank=False)
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("message", volume=100)
+
+    def test_urgency_does_not_override_suppress_sound(self):
+        critical_sound = "/tmp/notify-sound-test-critical.wav"
+        self.write_config(
+            {
+                "sound": "message",
+                "urgency_sounds": {
+                    "low": None,
+                    "normal": None,
+                    "critical": critical_sound,
+                },
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification(
+                "warp",
+                hints=("suppress-sound", ("urgency", 2)),
+                trailing_blank=False,
+            )
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_not_called()
+
+    def test_urgency_does_not_reactivate_disabled_app(self):
+        critical_sound = "/tmp/notify-sound-test-critical.wav"
+        self.write_config(
+            {
+                "sound": "message",
+                "urgency_sounds": {
+                    "low": None,
+                    "normal": None,
+                    "critical": critical_sound,
+                },
+                "apps": {"warp": {"enabled": False, "sound": None}},
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification(
+                "warp", hints=(("urgency", 2),), trailing_blank=False
+            )
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_not_called()
+
+    def test_urgency_does_not_override_no_duplicate(self):
+        critical_sound = "/tmp/notify-sound-test-critical.wav"
+        self.write_config(
+            {
+                "sound": "message",
+                "no_duplicate": True,
+                "urgency_sounds": {
+                    "low": None,
+                    "normal": None,
+                    "critical": critical_sound,
+                },
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification(
+                "warp",
+                hints=("sound-name", ("urgency", 2)),
+                trailing_blank=False,
+            )
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_not_called()
+
+    def test_urgency_override_respects_app_volume(self):
+        critical_sound = "/tmp/notify-sound-test-critical.wav"
+        self.write_config(
+            {
+                "sound": "message",
+                "urgency_sounds": {
+                    "low": None,
+                    "normal": None,
+                    "critical": critical_sound,
+                },
+                "apps": {
+                    "warp": {"enabled": True, "sound": None, "volume": 50}
+                },
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification(
+                "warp", hints=(("urgency", 2),), trailing_blank=False
+            )
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with(critical_sound, volume=50)
+
+    def test_maybe_play_ignores_invalid_urgency_value(self):
+        critical_sound = "/tmp/notify-sound-test-critical.wav"
+        cfg = {
+            "enabled": True,
+            "sound": "message",
+            "urgency_sounds": {
+                "low": None,
+                "normal": None,
+                "critical": critical_sound,
+            },
+            "apps": {},
+        }
+        instance = daemon.NotifyDaemon()
+        with mock.patch.object(player, "play_choice") as play:
+            instance._maybe_play("warp", set(), cfg, urgency=5)
         play.assert_called_once_with("message", volume=100)
 
     def test_desktop_entry_hint_overrides_per_app_config_lookup(self):

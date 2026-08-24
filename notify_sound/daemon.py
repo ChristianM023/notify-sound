@@ -545,8 +545,9 @@ class NotifyDaemon:
 
     def _maybe_play(self, app_name, hints, cfg=None, urgency=None):
         # ``urgency`` (0=low, 1=normal, 2=critical) llega ya capturado por
-        # el parser; la regla de override por nivel se implementa en la
-        # subtarea 2 de URG-001 y aún no altera el flujo de playback.
+        # el parser. La regla de override por nivel (URG-001) va después de
+        # suppress-sound, per-app disabled y no_duplicate, y antes de la
+        # elección del sonido del app/global.
         if "suppress-sound" in hints:
             return
         if cfg is None:
@@ -565,14 +566,26 @@ class NotifyDaemon:
             "no_duplicate", True
         ):
             return
+        # Volumen por app (0-100): se aplica tanto al sonido propio de la
+        # app como al global y al override por urgencia. Ausente o None ->
+        # 100 (comportamiento actual); config ya normaliza valores
+        # inválidos a 100.
+        volume = app_cfg.get("volume")
+        if volume is None:
+            volume = 100
+        # Override por nivel de urgencia: si la notificación trae urgency
+        # (0=low, 1=normal, 2=critical) y hay un sonido configurado para
+        # ese nivel, se reproduce ese en lugar del sonido del app/global.
+        # Valores fuera de 0-2 se ignoran (comportamiento actual).
+        if urgency is not None:
+            level = {0: "low", 1: "normal", 2: "critical"}.get(urgency)
+            if level is not None:
+                urgency_choice = cfg.get("urgency_sounds", {}).get(level)
+                if urgency_choice is not None:
+                    player.play_choice(urgency_choice, volume=volume)
+                    return
         choice = app_cfg.get("sound") or cfg.get("sound")
         if choice:
-            # Volumen por app (0-100): se aplica tanto al sonido propio de
-            # la app como al global. Ausente o None -> 100 (comportamiento
-            # actual); config ya normaliza valores inválidos a 100.
-            volume = app_cfg.get("volume")
-            if volume is None:
-                volume = 100
             player.play_choice(choice, volume=volume)
 
     def on_signal(self, signum, frame):
