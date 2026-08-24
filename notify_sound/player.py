@@ -1,3 +1,4 @@
+import math
 import os
 import re
 import stat
@@ -55,10 +56,60 @@ def _run(command):
     return process
 
 
-def play_sound(sound_id):
+def _normalize_volume(volume):
+    """Normaliza el volumen a int 0-100; inválido o fuera de rango → 100."""
+    if isinstance(volume, bool) or not isinstance(volume, int):
+        return 100
+    if volume < 0 or volume > 100:
+        return 100
+    return volume
+
+
+def _canberra_volume_flag(volume):
+    """canberra-gtk-play --volume=<dB>: valor en dB (0.0 = 100 %)."""
+    if volume >= 100:
+        return []
+    db = 20 * math.log10(volume / 100)
+    return [f"--volume={db:.2f}"]
+
+
+def _gst_volume_flag(volume):
+    """gst-launch-1.0 playbin volume=<float 0.0-1.0> (1.0 = 100 %)."""
+    if volume >= 100:
+        return []
+    return [f"volume={volume / 100:.2f}"]
+
+
+def _ffplay_volume_flag(volume):
+    """ffplay -volume <0-100> (0 = silencio, 100 = sin reducción)."""
+    if volume >= 100:
+        return []
+    return ["-volume", str(volume)]
+
+
+def _mpv_volume_flag(volume):
+    """mpv --volume=<0-100> (0 = silencio, 100 = sin reducción)."""
+    if volume >= 100:
+        return []
+    return [f"--volume={volume}"]
+
+
+def _mpg123_volume_flag(volume):
+    """mpg123 -f <0-32768> (scale factor, default 32768 = 100 %)."""
+    if volume >= 100:
+        return []
+    return ["-f", str(round(volume / 100 * 32768))]
+
+
+def play_sound(sound_id, volume=100):
     if not isinstance(sound_id, str) or not _SOUND_ID_RE.fullmatch(sound_id):
         return False
-    return _run(["canberra-gtk-play", "-i", sound_id]) is not None
+    volume = _normalize_volume(volume)
+    if volume == 0:
+        return False
+    command = ["canberra-gtk-play", "-i", sound_id]
+    command.extend(_canberra_volume_flag(volume))
+    return _run(command) is not None
 
 
 def _play_fallback(commands):
@@ -133,22 +184,34 @@ def _regular_audio_path(path):
     return candidate
 
 
-def play_file(path):
+def play_file(path, volume=100):
     path = _regular_audio_path(path)
     if path is None:
         return False
+    volume = _normalize_volume(volume)
+    if volume == 0:
+        return False
     ext = os.path.splitext(path)[1].lower()
     if ext in _CANBERRA_EXTENSIONS:
-        return _run(["canberra-gtk-play", "--file", path]) is not None
+        command = ["canberra-gtk-play", "--file", path]
+        command.extend(_canberra_volume_flag(volume))
+        return _run(command) is not None
     try:
         uri = Path(path).as_uri()
     except (OSError, ValueError):
         return False
     commands = (
-        ["gst-launch-1.0", "playbin", f"uri={uri}"],
-        ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", path],
-        ["mpv", "--no-terminal", "--really-quiet", path],
-        ["mpg123", "-q", path],
+        ["gst-launch-1.0", "playbin", f"uri={uri}"]
+        + _gst_volume_flag(volume),
+        ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet"]
+        + _ffplay_volume_flag(volume)
+        + [path],
+        ["mpv", "--no-terminal", "--really-quiet"]
+        + _mpv_volume_flag(volume)
+        + [path],
+        ["mpg123", "-q"]
+        + _mpg123_volume_flag(volume)
+        + [path],
     )
     threading.Thread(
         target=_play_fallback_with_limits, args=(commands,), daemon=True
@@ -156,9 +219,9 @@ def play_file(path):
     return True
 
 
-def play_choice(choice):
+def play_choice(choice, volume=100):
     if not isinstance(choice, str) or not choice:
         return False
     if _regular_audio_path(choice) is not None:
-        return play_file(choice)
-    return play_sound(choice)
+        return play_file(choice, volume=volume)
+    return play_sound(choice, volume=volume)

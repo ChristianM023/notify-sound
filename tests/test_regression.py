@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -434,6 +435,116 @@ class SoundTests(unittest.TestCase):
             ):
                 available = sounds.list_sounds()
         self.assertEqual(available["theme-tone"], str(flac))
+
+
+class PlayerTests(unittest.TestCase):
+    def _audio_file(self, suffix=".mp3"):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        path = Path(temp.name) / f"sound{suffix}"
+        path.write_bytes(b"not-a-real-audio-file")
+        return str(path)
+
+    def test_play_sound_applies_canberra_volume_flag(self):
+        with mock.patch.object(player.subprocess, "Popen") as popen:
+            self.assertTrue(player.play_sound("message", volume=50))
+        command = popen.call_args.args[0]
+        self.assertEqual(command[0], "canberra-gtk-play")
+        self.assertIn("--volume=-6.02", command)
+
+    def test_play_sound_omits_volume_flag_at_100(self):
+        with mock.patch.object(player.subprocess, "Popen") as popen:
+            self.assertTrue(player.play_sound("message", volume=100))
+        command = popen.call_args.args[0]
+        self.assertEqual(command, ["canberra-gtk-play", "-i", "message"])
+
+    def test_play_sound_omits_volume_flag_for_invalid_volume(self):
+        for value in ("50", 50.0, None, True, -1, 101):
+            with mock.patch.object(player.subprocess, "Popen") as popen:
+                self.assertTrue(player.play_sound("message", volume=value))
+            self.assertEqual(
+                popen.call_args.args[0],
+                ["canberra-gtk-play", "-i", "message"],
+                msg=str(value),
+            )
+
+    def test_play_sound_does_not_launch_at_volume_zero(self):
+        with mock.patch.object(player.subprocess, "Popen") as popen:
+            self.assertFalse(player.play_sound("message", volume=0))
+        popen.assert_not_called()
+
+    def test_play_file_canberra_extension_applies_volume_flag(self):
+        path = self._audio_file(".wav")
+        with mock.patch.object(player.subprocess, "Popen") as popen:
+            self.assertTrue(player.play_file(path, volume=50))
+        command = popen.call_args.args[0]
+        self.assertEqual(command[0], "canberra-gtk-play")
+        self.assertIn("--volume=-6.02", command)
+
+    def test_play_file_fallback_applies_volume_flags(self):
+        path = self._audio_file(".mp3")
+        calls = []
+        event = threading.Event()
+
+        def fake_popen(command, **kwargs):
+            calls.append(command)
+            if len(calls) == 4:
+                event.set()
+            proc = mock.Mock()
+            proc.wait.return_value = 1
+            return proc
+
+        with mock.patch.object(
+            player.subprocess, "Popen", side_effect=fake_popen
+        ):
+            self.assertTrue(player.play_file(path, volume=50))
+        self.assertTrue(event.wait(1))
+        self.assertEqual(len(calls), 4)
+        gst, ffplay, mpv, mpg123 = calls
+        self.assertIn("volume=0.50", gst)
+        self.assertEqual(ffplay[ffplay.index("-volume") + 1], "50")
+        self.assertIn("--volume=50", mpv)
+        self.assertEqual(mpg123[mpg123.index("-f") + 1], "16384")
+
+    def test_play_file_fallback_omits_volume_flags_at_100(self):
+        path = self._audio_file(".mp3")
+        calls = []
+        event = threading.Event()
+
+        def fake_popen(command, **kwargs):
+            calls.append(command)
+            if len(calls) == 4:
+                event.set()
+            proc = mock.Mock()
+            proc.wait.return_value = 1
+            return proc
+
+        with mock.patch.object(
+            player.subprocess, "Popen", side_effect=fake_popen
+        ):
+            self.assertTrue(player.play_file(path, volume=100))
+        self.assertTrue(event.wait(1))
+        self.assertEqual(len(calls), 4)
+        gst, ffplay, mpv, mpg123 = calls
+        self.assertNotIn("volume=", gst)
+        self.assertNotIn("-volume", ffplay)
+        self.assertNotIn("--volume=", mpv)
+        self.assertNotIn("-f", mpg123)
+
+    def test_play_file_does_not_launch_at_volume_zero(self):
+        path = self._audio_file(".mp3")
+        with mock.patch.object(player.subprocess, "Popen") as popen:
+            self.assertFalse(player.play_file(path, volume=0))
+        popen.assert_not_called()
+
+    def test_play_choice_propagates_volume(self):
+        path = self._audio_file(".mp3")
+        with mock.patch.object(player, "play_sound") as play_sound, \
+             mock.patch.object(player, "play_file") as play_file:
+            player.play_choice("message", volume=30)
+            player.play_choice(path, volume=30)
+        play_sound.assert_called_once_with("message", volume=30)
+        play_file.assert_called_once_with(path, volume=30)
 
 
 class DaemonTests(ConfigTests):
