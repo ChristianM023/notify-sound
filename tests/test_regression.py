@@ -1887,5 +1887,105 @@ class GuiTests(unittest.TestCase):
         self.assertIn("/old.wav", cfg["custom_sounds"])
 
 
+class GuiVolumeTests(unittest.TestCase):
+    """Tests del slider de volumen por app (VOL-001)."""
+
+    def _bare_window(self, cfg):
+        from notify_sound import gui
+
+        window = gui.NotifyWindow.__new__(gui.NotifyWindow)
+        window.cfg = cfg
+        window.app_rows = {}
+        window.apps_list = mock.Mock()
+        window._rebuilding = False
+        return window
+
+    def _row_window(self, cfg, app_name="warp"):
+        if not os.environ.get("DISPLAY") and not os.environ.get(
+            "WAYLAND_DISPLAY"
+        ):
+            self.skipTest("requires a display to instantiate GTK widgets")
+        window = self._bare_window(cfg)
+        window.theme_ids = ["message"]
+        window._ensure_app_row(app_name)
+        return window
+
+    def test_app_row_contains_volume_scale_with_0_100_adjustment(self):
+        from notify_sound import gui
+
+        cfg = {"apps": {"warp": {"enabled": True, "sound": None}}}
+        window = self._row_window(cfg)
+        entry = window.app_rows["warp"]
+        self.assertIn("volume_scale", entry)
+        scale = entry["volume_scale"]
+        self.assertIsInstance(scale, gui.Gtk.Scale)
+        adjustment = scale.get_adjustment()
+        self.assertEqual(adjustment.get_lower(), 0)
+        self.assertEqual(adjustment.get_upper(), 100)
+
+    def test_volume_scale_reflects_saved_value(self):
+        cfg = {
+            "apps": {"warp": {"enabled": True, "sound": None, "volume": 30}}
+        }
+        window = self._row_window(cfg)
+        scale = window.app_rows["warp"]["volume_scale"]
+        self.assertEqual(scale.get_value(), 30)
+
+    def test_volume_change_persists_rounded_value(self):
+        cfg = {
+            "apps": {"warp": {"enabled": True, "sound": None, "volume": 100}}
+        }
+        window = self._row_window(cfg)
+        scale = window.app_rows["warp"]["volume_scale"]
+        with mock.patch.object(config, "save_config") as save_config:
+            scale.get_adjustment().set_value(50)
+        save_config.assert_called_once()
+        saved = save_config.call_args.args[0]
+        self.assertEqual(saved["apps"]["warp"]["volume"], 50)
+        self.assertEqual(cfg["apps"]["warp"]["volume"], 50)
+
+    def test_test_app_plays_with_app_volume(self):
+        cfg = {
+            "sound": "message",
+            "apps": {"warp": {"enabled": True, "sound": None, "volume": 30}},
+        }
+        window = self._bare_window(cfg)
+        with mock.patch.object(player, "play_choice") as play:
+            window._on_test_app(None, "warp")
+        play.assert_called_once_with("message", volume=30)
+
+    def test_test_app_plays_at_default_volume_when_missing(self):
+        cfg = {
+            "sound": "message",
+            "apps": {"warp": {"enabled": True, "sound": None}},
+        }
+        window = self._bare_window(cfg)
+        with mock.patch.object(player, "play_choice") as play:
+            window._on_test_app(None, "warp")
+        play.assert_called_once_with("message", volume=100)
+
+    def test_refresh_app_sensitivity_disables_volume_scale_when_master_off(self):
+        cfg = {
+            "enabled": False,
+            "apps": {"warp": {"enabled": True, "sound": None}},
+        }
+        window = self._row_window(cfg)
+        entry = window.app_rows["warp"]
+        window._refresh_app_sensitivity()
+        self.assertFalse(entry["volume_scale"].get_sensitive())
+        self.assertFalse(entry["dropdown"].get_sensitive())
+        self.assertFalse(entry["switch"].get_sensitive())
+
+    def test_refresh_app_sensitivity_enables_volume_scale_when_master_on(self):
+        cfg = {
+            "enabled": True,
+            "apps": {"warp": {"enabled": True, "sound": None}},
+        }
+        window = self._row_window(cfg)
+        entry = window.app_rows["warp"]
+        window._refresh_app_sensitivity()
+        self.assertTrue(entry["volume_scale"].get_sensitive())
+
+
 if __name__ == "__main__":
     unittest.main()
