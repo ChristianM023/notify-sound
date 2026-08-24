@@ -225,10 +225,12 @@ class ConfigTests(unittest.TestCase):
                 "warp": {
                     "enabled": True,
                     "sound": "/tmp/notify-sound-test-I-Feel-Good.wav",
+                    "volume": 100,
                 },
                 "Telegram Desktop": {
                     "enabled": True,
                     "sound": "/tmp/notify-sound-test-Whistle.wav",
+                    "volume": 100,
                 },
             },
         }
@@ -332,6 +334,32 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(len(set(synonyms)), len(synonyms))
         self.assertNotIn("", synonyms)
         self.assertNotIn(long_value, synonyms)
+
+    def test_normalize_app_defaults_volume_to_100_when_missing(self):
+        self.write_config({"apps": {"aimp": {"enabled": True, "sound": None}}})
+        loaded = config.load_config()
+        self.assertEqual(loaded["apps"]["aimp"]["volume"], 100)
+
+    def test_normalize_app_keeps_valid_volume_values(self):
+        for value in (0, 50, 100):
+            self.write_config(
+                {"apps": {"aimp": {"enabled": True, "volume": value}}}
+            )
+            loaded = config.load_config()
+            self.assertEqual(
+                loaded["apps"]["aimp"]["volume"], value, msg=str(value)
+            )
+
+    def test_normalize_app_rejects_invalid_volume_values(self):
+        invalid = ["50", 50.0, None, True, False, [], -1, 101]
+        for value in invalid:
+            self.write_config(
+                {"apps": {"aimp": {"enabled": True, "volume": value}}}
+            )
+            loaded = config.load_config()
+            self.assertEqual(
+                loaded["apps"]["aimp"]["volume"], 100, msg=str(value)
+            )
 
     def test_json_files_are_private_and_state_is_bounded(self):
         config.save_config(config.DEFAULT_CONFIG)

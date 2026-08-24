@@ -133,6 +133,17 @@ def _normalize_app(app):
         normalized["synonyms"] = clean_synonyms
     else:
         normalized.pop("synonyms", None)
+    # Volumen por app: int 0-100, default 100. 0 es silencio válido y no
+    # debe confundirse con ausencia de campo; los bools son subclase de
+    # int en Python y se descartan como inválidos.
+    volume = normalized.get("volume")
+    normalized["volume"] = (
+        volume
+        if isinstance(volume, int)
+        and not isinstance(volume, bool)
+        and 0 <= volume <= 100
+        else 100
+    )
     return normalized
 
 
