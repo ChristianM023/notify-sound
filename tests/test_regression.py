@@ -22,12 +22,21 @@ def _hint_entry(hint):
         key, value = hint
     else:
         key, value = hint, "message"
+    if isinstance(value, int) and not isinstance(value, bool):
+        value_line = f"         variant byte {value}\n"
+    else:
+        value_line = f'         variant string "{value}"\n'
     return (
         "      dict entry(\n"
         f'         string "{key}"\n'
-        f'         variant string "{value}"\n'
+        f"{value_line}"
         "      )\n"
     )
+
+
+def _lines(payload):
+    """Convierte un payload de notificación (bytes) en líneas para el parser."""
+    return payload.decode("utf-8").splitlines()
 
 
 def notification(app_name, hints=(), trailing_blank=True, body="Body"):
@@ -233,6 +242,11 @@ class ConfigTests(unittest.TestCase):
             ],
             "no_duplicate": True,
             "autostart": True,
+            "urgency_sounds": {
+                "low": None,
+                "normal": None,
+                "critical": None,
+            },
             "apps": {
                 "warp": {
                     "enabled": True,
@@ -371,6 +385,61 @@ class ConfigTests(unittest.TestCase):
             loaded = config.load_config()
             self.assertEqual(
                 loaded["apps"]["aimp"]["volume"], 100, msg=str(value)
+            )
+
+    def test_urgency_sounds_default_when_absent(self):
+        self.write_config({"enabled": True, "sound": "message"})
+        loaded = config.load_config()
+        self.assertEqual(
+            loaded["urgency_sounds"],
+            {"low": None, "normal": None, "critical": None},
+        )
+
+    def test_urgency_sounds_valid_values_are_loaded(self):
+        self.write_config(
+            {
+                "urgency_sounds": {
+                    "low": "/tmp/low.wav",
+                    "normal": None,
+                    "critical": "/tmp/critical.wav",
+                }
+            }
+        )
+        loaded = config.load_config()
+        self.assertEqual(
+            loaded["urgency_sounds"],
+            {
+                "low": "/tmp/low.wav",
+                "normal": None,
+                "critical": "/tmp/critical.wav",
+            },
+        )
+
+    def test_urgency_sounds_invalid_keys_and_values_are_normalized(self):
+        self.write_config(
+            {
+                "urgency_sounds": {
+                    "low": "",
+                    "normal": 5,
+                    "critical": "x" * (config.MAX_PATH_LENGTH + 1),
+                    "bogus": "/tmp/bogus.wav",
+                }
+            }
+        )
+        loaded = config.load_config()
+        self.assertEqual(
+            loaded["urgency_sounds"],
+            {"low": None, "normal": None, "critical": None},
+        )
+
+    def test_urgency_sounds_non_dict_uses_default(self):
+        for value in ("x", [], 5, None):
+            self.write_config({"urgency_sounds": value})
+            loaded = config.load_config()
+            self.assertEqual(
+                loaded["urgency_sounds"],
+                {"low": None, "normal": None, "critical": None},
+                msg=str(value),
             )
 
     def test_json_files_are_private_and_state_is_bounded(self):
@@ -723,6 +792,52 @@ class DaemonTests(ConfigTests):
             instance._reader(monitor)
         play.assert_not_called()
         self.assertEqual(instance.seen, {"aimp"})
+
+    def test_parse_block_captures_urgency_byte(self):
+        payload = notification(
+            "app", hints=(("urgency", 2),), trailing_blank=False
+        )
+        app_name, hints, desktop_entry, urgency = daemon._parse_block(
+            _lines(payload)
+        )
+        self.assertEqual(urgency, 2)
+        self.assertIn("urgency", hints)
+
+    def test_parse_block_urgency_absent_is_none(self):
+        payload = notification("app", trailing_blank=False)
+        app_name, hints, desktop_entry, urgency = daemon._parse_block(
+            _lines(payload)
+        )
+        self.assertIsNone(urgency)
+
+    def test_parse_block_urgency_out_of_range_is_none(self):
+        payload = notification(
+            "app", hints=(("urgency", 5),), trailing_blank=False
+        )
+        app_name, hints, desktop_entry, urgency = daemon._parse_block(
+            _lines(payload)
+        )
+        self.assertIsNone(urgency)
+
+    def test_parse_block_urgency_low_and_normal(self):
+        for value in (0, 1):
+            payload = notification(
+                "app", hints=(("urgency", value),), trailing_blank=False
+            )
+            app_name, hints, desktop_entry, urgency = daemon._parse_block(
+                _lines(payload)
+            )
+            self.assertEqual(urgency, value, msg=str(value))
+
+    def test_urgency_hint_does_not_change_playback_yet(self):
+        instance, monitor = self.make_daemon(
+            notification(
+                "warp", hints=(("urgency", 2),), trailing_blank=False
+            )
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("message", volume=100)
 
     def test_desktop_entry_hint_overrides_per_app_config_lookup(self):
         self.write_config(

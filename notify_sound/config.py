@@ -47,8 +47,11 @@ DEFAULT_CONFIG = {
     "custom_sounds": [],
     "no_duplicate": True,
     "autostart": True,
+    "urgency_sounds": {"low": None, "normal": None, "critical": None},
     "apps": {},
 }
+
+_URGENCY_LEVELS = ("low", "normal", "critical")
 
 
 def autostart_enabled():
@@ -144,6 +147,28 @@ def _normalize_app(app):
         and 0 <= volume <= 100
         else 100
     )
+    return normalized
+
+
+def _normalize_urgency_sounds(value):
+    """Normaliza el mapeo urgency->sonido a las 3 claves canonicas.
+
+    Valores validos: None (sin override) o string acotado (0 < len <=
+    MAX_PATH_LENGTH, igual que el campo ``sound``). Claves desconocidas y
+    valores invalidos se descartan (None). Si el origen no es un dict, se
+    devuelve el default completo.
+    """
+    if not isinstance(value, dict):
+        return {level: None for level in _URGENCY_LEVELS}
+    normalized = {}
+    for level in _URGENCY_LEVELS:
+        sound = value.get(level)
+        normalized[level] = (
+            sound
+            if sound is None
+            or (isinstance(sound, str) and 0 < len(sound) <= MAX_PATH_LENGTH)
+            else None
+        )
     return normalized
 
 
@@ -253,6 +278,7 @@ def load_config():
         "custom_sounds": list(DEFAULT_CONFIG["custom_sounds"]),
         "no_duplicate": DEFAULT_CONFIG["no_duplicate"],
         "autostart": DEFAULT_CONFIG["autostart"],
+        "urgency_sounds": dict(DEFAULT_CONFIG["urgency_sounds"]),
         "apps": {},
     }
     data = {}
@@ -277,6 +303,8 @@ def load_config():
                     for p in value
                     if isinstance(p, str) and 0 < len(p) <= MAX_PATH_LENGTH
                 ]
+            elif key == "urgency_sounds":
+                cfg["urgency_sounds"] = _normalize_urgency_sounds(value)
             elif key in ("enabled", "no_duplicate", "autostart") and isinstance(
                 value, bool
             ):

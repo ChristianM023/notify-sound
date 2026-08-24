@@ -25,6 +25,7 @@ _MESSAGE_HEADER_RE = re.compile(
     r"^(?:method call|signal|method return|error)\b"
 )
 _TOP_LEVEL_INT32_RE = re.compile(r"^ {3}int32[ \t]+[-+]?\d+[ \t]*$")
+_VARIANT_BYTE_RE = re.compile(r"^[-+]?\d+")
 _SENDER_RE = re.compile(r"\bsender=(:[0-9]+\.[0-9]+)")
 _SENDER_VALUE_RE = re.compile(r"^:[0-9]+\.[0-9]+$")
 _DBUS_PID_RE = re.compile(r"^\s*uint32\s+(\d+)\s*$")
@@ -157,14 +158,16 @@ def _dbus_tokens(lines):
     """Yield structural dict markers and decoded dbus-monitor strings.
 
     Tokens emitted:
-      ("dict", None)                 -- start of a dict entry (a hint pair)
-      ("string", value)              -- a bare ``string "..."`` argument
-      ("variant_string", value)       -- a ``variant string "..."`` argument
+      ("dict", None)                -- start of a dict entry (a hint pair)
+      ("string", value)             -- a bare ``string "..."`` argument
+      ("variant_string", value)     -- a ``variant string "..."`` argument
       ("variant_array_string", value) -- a ``variant array string "..."`` item
+      ("variant_byte", value)       -- a ``variant byte N`` argument (int)
 
     The variant tokens let callers read hint *values* (e.g. the
-    ``desktop-entry`` hint) without re-introducing column/blank-line based
-    framing: quoted content is still tracked with the same state machine.
+    ``desktop-entry`` hint or the ``urgency`` byte) without re-introducing
+    column/blank-line based framing: quoted content is still tracked with
+    the same state machine.
     """
     in_string = False
     escaped = False
@@ -209,6 +212,17 @@ def _dbus_tokens(lines):
                 in_string = True
                 _pending_string_kind = "variant_string"
                 position += len('variant string "')
+            elif line.startswith("variant byte ", position):
+                rest = line[position + len("variant byte "):]
+                match = _VARIANT_BYTE_RE.match(rest)
+                if match:
+                    try:
+                        yield "variant_byte", int(match.group(0))
+                    except ValueError:
+                        pass
+                    position += len("variant byte ") + len(match.group(0))
+                else:
+                    position += len("variant byte ")
             elif line.startswith('string "', position):
                 in_string = True
                 _pending_string_kind = "string"
@@ -223,6 +237,7 @@ def _parse_block(lines):
     hints = set()
     hint_key = None
     desktop_entry = None
+    urgency = None
     expecting_hint = False
     for token_type, value in _dbus_tokens(lines):
         if token_type == "dict":
@@ -238,7 +253,13 @@ def _parse_block(lines):
             if desktop_entry is None:
                 desktop_entry = value
             expecting_hint = False
-    return app_name, hints, desktop_entry
+        elif token_type == "variant_byte" and expecting_hint and hint_key == "urgency":
+            # Solo 0=low, 1=normal, 2=critical son válidos; fuera de rango
+            # se ignora y el nivel queda sin capturar (comportamiento actual).
+            if value in (0, 1, 2):
+                urgency = value
+            expecting_hint = False
+    return app_name, hints, desktop_entry, urgency
 
 
 class NotifyDaemon:
@@ -452,7 +473,7 @@ class NotifyDaemon:
                 self._schedule_monitor_restart()
 
     def _handle_block(self, lines):
-        app_name, hints, desktop_entry = _parse_block(lines)
+        app_name, hints, desktop_entry, urgency = _parse_block(lines)
         if "x-shell-sender" in hints:
             return
         cfg = config.load_config()
@@ -482,7 +503,7 @@ class NotifyDaemon:
         if not canonical:
             return
         self._record_app(canonical, comm)
-        self._maybe_play(canonical, hints, cfg)
+        self._maybe_play(canonical, hints, cfg, urgency)
 
     @staticmethod
     def _find_synonym_owner(cfg, app_name):
@@ -522,7 +543,10 @@ class NotifyDaemon:
                 {"apps_seen": apps_seen, "app_meta": app_meta}
             )
 
-    def _maybe_play(self, app_name, hints, cfg=None):
+    def _maybe_play(self, app_name, hints, cfg=None, urgency=None):
+        # ``urgency`` (0=low, 1=normal, 2=critical) llega ya capturado por
+        # el parser; la regla de override por nivel se implementa en la
+        # subtarea 2 de URG-001 y aún no altera el flujo de playback.
         if "suppress-sound" in hints:
             return
         if cfg is None:
