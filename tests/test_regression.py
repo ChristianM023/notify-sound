@@ -88,6 +88,17 @@ def gtk_notification(
     return (payload + ("\n" if trailing_blank else "")).encode()
 
 
+def _bare_window(cfg):
+    from notify_sound import gui
+
+    window = gui.NotifyWindow.__new__(gui.NotifyWindow)
+    window.cfg = cfg
+    window.app_rows = {}
+    window.apps_list = mock.Mock()
+    window._rebuilding = False
+    return window
+
+
 class FakeLoop:
     def __init__(self, running=False):
         self.running = running
@@ -452,19 +463,22 @@ class PlayerTests(unittest.TestCase):
         self.assertEqual(command[0], "canberra-gtk-play")
         self.assertIn("--volume=-6.02", command)
 
-    def test_play_sound_omits_volume_flag_at_100(self):
+    def test_play_sound_passes_explicit_volume_flag_at_100(self):
         with mock.patch.object(player.subprocess, "Popen") as popen:
             self.assertTrue(player.play_sound("message", volume=100))
         command = popen.call_args.args[0]
-        self.assertEqual(command, ["canberra-gtk-play", "-i", "message"])
+        self.assertEqual(
+            command,
+            ["canberra-gtk-play", "-i", "message", "--volume=0.0"],
+        )
 
-    def test_play_sound_omits_volume_flag_for_invalid_volume(self):
+    def test_play_sound_invalid_volume_uses_explicit_100_volume_flag(self):
         for value in ("50", 50.0, None, True, -1, 101):
             with mock.patch.object(player.subprocess, "Popen") as popen:
                 self.assertTrue(player.play_sound("message", volume=value))
             self.assertEqual(
                 popen.call_args.args[0],
-                ["canberra-gtk-play", "-i", "message"],
+                ["canberra-gtk-play", "-i", "message", "--volume=0.0"],
                 msg=str(value),
             )
 
@@ -506,7 +520,7 @@ class PlayerTests(unittest.TestCase):
         self.assertIn("--volume=50", mpv)
         self.assertEqual(mpg123[mpg123.index("-f") + 1], "16384")
 
-    def test_play_file_fallback_omits_volume_flags_at_100(self):
+    def test_play_file_fallback_passes_explicit_volume_flags_at_100(self):
         path = self._audio_file(".mp3")
         calls = []
         event = threading.Event()
@@ -526,10 +540,10 @@ class PlayerTests(unittest.TestCase):
         self.assertTrue(event.wait(1))
         self.assertEqual(len(calls), 4)
         gst, ffplay, mpv, mpg123 = calls
-        self.assertNotIn("volume=", gst)
-        self.assertNotIn("-volume", ffplay)
-        self.assertNotIn("--volume=", mpv)
-        self.assertNotIn("-f", mpg123)
+        self.assertIn("volume=1.0", gst)
+        self.assertEqual(ffplay[ffplay.index("-volume") + 1], "100")
+        self.assertIn("--volume=100", mpv)
+        self.assertEqual(mpg123[mpg123.index("-f") + 1], "32768")
 
     def test_play_file_does_not_launch_at_volume_zero(self):
         path = self._audio_file(".mp3")
@@ -1429,20 +1443,10 @@ class GuiTests(unittest.TestCase):
         self.assertFalse(app._held)
         self.assertIsNone(app.window)
 
-    def _bare_window(self, cfg):
-        from notify_sound import gui
-
-        window = gui.NotifyWindow.__new__(gui.NotifyWindow)
-        window.cfg = cfg
-        window.app_rows = {}
-        window.apps_list = mock.Mock()
-        window._rebuilding = False
-        return window
-
     def test_display_name_prefers_alias_over_canonical(self):
         from notify_sound import gui
 
-        window = self._bare_window({"apps": {"aimp": {"name": "AIMP"}}})
+        window = _bare_window({"apps": {"aimp": {"name": "AIMP"}}})
         self.assertEqual(window._display_name("aimp"), "AIMP")
         self.assertEqual(window._display_name("telegram"), "telegram")
 
@@ -1450,7 +1454,7 @@ class GuiTests(unittest.TestCase):
         from notify_sound import gui
 
         cfg = {"apps": {"aimp": {"enabled": True, "sound": None}}}
-        window = self._bare_window(cfg)
+        window = _bare_window(cfg)
         label = mock.Mock()
         popover = mock.Mock()
         entry = mock.Mock()
@@ -1467,7 +1471,7 @@ class GuiTests(unittest.TestCase):
         from notify_sound import gui
 
         cfg = {"apps": {"aimp": {"enabled": True, "sound": None}}}
-        window = self._bare_window(cfg)
+        window = _bare_window(cfg)
 
         label = mock.Mock()
         popover = mock.Mock()
@@ -1491,7 +1495,7 @@ class GuiTests(unittest.TestCase):
         from notify_sound import gui
 
         cfg = {"apps": {"aimp": {"enabled": True, "sound": None, "name": "Me AIM"}}}
-        window = self._bare_window(cfg)
+        window = _bare_window(cfg)
         label = mock.Mock()
         popover = mock.Mock()
         window.app_rows = {"aimp": {"name_label": label}}
@@ -1506,7 +1510,7 @@ class GuiTests(unittest.TestCase):
         from notify_sound import gui
 
         cfg = {"apps": {"aimp": {"enabled": True, "sound": None}}}
-        window = self._bare_window(cfg)
+        window = _bare_window(cfg)
         label = mock.Mock()
         popover = mock.Mock()
         window.app_rows = {"aimp": {"name_label": label}}
@@ -1525,7 +1529,7 @@ class GuiTests(unittest.TestCase):
                 "songB": {"enabled": True, "sound": None},
             }
         }
-        window = self._bare_window(cfg)
+        window = _bare_window(cfg)
         label = mock.Mock()
         popover = mock.Mock()
         entry = mock.Mock()
@@ -1550,7 +1554,7 @@ class GuiTests(unittest.TestCase):
                 "aimp": {"enabled": True, "sound": None},
             }
         }
-        window = self._bare_window(cfg)
+        window = _bare_window(cfg)
         source_row = mock.Mock()
         window.app_rows = {
             "songB": {"row": source_row},
@@ -1574,7 +1578,7 @@ class GuiTests(unittest.TestCase):
         from notify_sound import gui
 
         popover = mock.Mock()
-        window = self._bare_window({"apps": {}})
+        window = _bare_window({"apps": {}})
         with mock.patch.object(window, "_merge_app_into") as merge:
             gui.NotifyWindow._on_merge_confirm(
                 window, None, "songB", "aimp", popover
@@ -1586,7 +1590,7 @@ class GuiTests(unittest.TestCase):
         from notify_sound import gui
 
         popover = mock.Mock()
-        window = self._bare_window({"apps": {}})
+        window = _bare_window({"apps": {}})
         with mock.patch.object(window, "_merge_app_into") as merge:
             gui.NotifyWindow._on_merge_cancel(window, None, popover)
         popover.popdown.assert_called_once_with()
@@ -1603,7 +1607,7 @@ class GuiTests(unittest.TestCase):
                 }
             }
         }
-        window = self._bare_window(cfg)
+        window = _bare_window(cfg)
         fake_state = {
             "apps_seen": ["aimp"],
             "app_meta": {
@@ -1624,7 +1628,7 @@ class GuiTests(unittest.TestCase):
         from notify_sound import gui
 
         cfg = {"apps": {"warp": {"enabled": True, "sound": None}}}
-        window = self._bare_window(cfg)
+        window = _bare_window(cfg)
         fake_state = {"apps_seen": ["warp"], "app_meta": {}}
         with mock.patch.object(config, "load_state", return_value=fake_state):
             info = window._format_app_info("warp")
@@ -1643,7 +1647,7 @@ class GuiTests(unittest.TestCase):
                 },
             }
         }
-        window = self._bare_window(cfg)
+        window = _bare_window(cfg)
         warp_row = mock.Mock()
         window.app_rows = {"warp": {"row": warp_row}}
         fake_state = {
@@ -1673,7 +1677,7 @@ class GuiTests(unittest.TestCase):
                 "aimp": {"enabled": False, "sound": None, "synonyms": ["x"]},
             }
         }
-        window = self._bare_window(cfg)
+        window = _bare_window(cfg)
         window.app_rows = {
             "warp": {"row": mock.Mock()},
             "aimp": {"row": mock.Mock()},
@@ -1694,7 +1698,7 @@ class GuiTests(unittest.TestCase):
     def test_reset_apps_cancel_does_nothing(self):
         from notify_sound import gui
 
-        window = self._bare_window({"apps": {"warp": {"enabled": True}}})
+        window = _bare_window({"apps": {"warp": {"enabled": True}}})
         popover = mock.Mock()
         with mock.patch.object(window, "_on_reset_apps_confirm") as confirm, \
              mock.patch.object(window, "_save") as save:
@@ -1714,7 +1718,7 @@ class GuiTests(unittest.TestCase):
                 }
             }
         }
-        window = self._bare_window(cfg)
+        window = _bare_window(cfg)
         window.app_rows = {
             "aimp": {
                 "row": mock.Mock(),
@@ -1751,7 +1755,7 @@ class GuiTests(unittest.TestCase):
                 }
             }
         }
-        window = self._bare_window(cfg)
+        window = _bare_window(cfg)
         window.app_rows = {
             "aimp": {
                 "row": mock.Mock(),
@@ -1778,7 +1782,7 @@ class GuiTests(unittest.TestCase):
             "custom_sounds": [],
             "apps": {"newapp": {"enabled": True, "sound": None}},
         }
-        window = self._bare_window(cfg)
+        window = _bare_window(cfg)
         window.theme_ids = ["message", "bell"]
         dropdown = mock.Mock()
         entry = {"dropdown": dropdown}
@@ -1799,7 +1803,7 @@ class GuiTests(unittest.TestCase):
             self.skipTest("requires a display to instantiate GTK widgets")
 
         cfg = {"apps": {"warp": {"enabled": True, "sound": None}}}
-        window = self._bare_window(cfg)
+        window = _bare_window(cfg)
         window.theme_ids = ["message"]
         window.apps_list = mock.Mock()
 
@@ -1847,7 +1851,7 @@ class GuiTests(unittest.TestCase):
                 "vlc": {"enabled": True, "sound": None},
             }
         }
-        window = self._bare_window(cfg)
+        window = _bare_window(cfg)
         fake_state = {
             "apps_seen": ["warp", "aimp", "vlc"],
             "app_meta": {
@@ -1871,7 +1875,7 @@ class GuiTests(unittest.TestCase):
         from notify_sound import gui
 
         cfg = {"custom_sounds": ["/old.wav"]}
-        window = self._bare_window(cfg)
+        window = _bare_window(cfg)
         gfile = mock.Mock()
         gfile.get_path.return_value = "/new.wav"
         dialog = mock.Mock()
@@ -1890,22 +1894,12 @@ class GuiTests(unittest.TestCase):
 class GuiVolumeTests(unittest.TestCase):
     """Tests del slider de volumen por app (VOL-001)."""
 
-    def _bare_window(self, cfg):
-        from notify_sound import gui
-
-        window = gui.NotifyWindow.__new__(gui.NotifyWindow)
-        window.cfg = cfg
-        window.app_rows = {}
-        window.apps_list = mock.Mock()
-        window._rebuilding = False
-        return window
-
     def _row_window(self, cfg, app_name="warp"):
         if not os.environ.get("DISPLAY") and not os.environ.get(
             "WAYLAND_DISPLAY"
         ):
             self.skipTest("requires a display to instantiate GTK widgets")
-        window = self._bare_window(cfg)
+        window = _bare_window(cfg)
         window.theme_ids = ["message"]
         window._ensure_app_row(app_name)
         return window
@@ -1949,7 +1943,7 @@ class GuiVolumeTests(unittest.TestCase):
             "sound": "message",
             "apps": {"warp": {"enabled": True, "sound": None, "volume": 30}},
         }
-        window = self._bare_window(cfg)
+        window = _bare_window(cfg)
         with mock.patch.object(player, "play_choice") as play:
             window._on_test_app(None, "warp")
         play.assert_called_once_with("message", volume=30)
@@ -1959,7 +1953,7 @@ class GuiVolumeTests(unittest.TestCase):
             "sound": "message",
             "apps": {"warp": {"enabled": True, "sound": None}},
         }
-        window = self._bare_window(cfg)
+        window = _bare_window(cfg)
         with mock.patch.object(player, "play_choice") as play:
             window._on_test_app(None, "warp")
         play.assert_called_once_with("message", volume=100)

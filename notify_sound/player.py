@@ -68,7 +68,9 @@ def _normalize_volume(volume):
 def _canberra_volume_flag(volume):
     """canberra-gtk-play --volume=<dB>: valor en dB (0.0 = 100 %)."""
     if volume >= 100:
-        return []
+        # 100 % pasa la flag explícita: sin --volume, canberra usa el
+        # volumen del evento del sistema, más bajo que el 100 % real.
+        return ["--volume=0.0"]
     db = 20 * math.log10(volume / 100)
     return [f"--volume={db:.2f}"]
 
@@ -76,28 +78,28 @@ def _canberra_volume_flag(volume):
 def _gst_volume_flag(volume):
     """gst-launch-1.0 playbin volume=<float 0.0-1.0> (1.0 = 100 %)."""
     if volume >= 100:
-        return []
+        return ["volume=1.0"]
     return [f"volume={volume / 100:.2f}"]
 
 
 def _ffplay_volume_flag(volume):
     """ffplay -volume <0-100> (0 = silencio, 100 = sin reducción)."""
     if volume >= 100:
-        return []
+        return ["-volume", "100"]
     return ["-volume", str(volume)]
 
 
 def _mpv_volume_flag(volume):
     """mpv --volume=<0-100> (0 = silencio, 100 = sin reducción)."""
     if volume >= 100:
-        return []
+        return ["--volume=100"]
     return [f"--volume={volume}"]
 
 
 def _mpg123_volume_flag(volume):
     """mpg123 -f <0-32768> (scale factor, default 32768 = 100 %)."""
     if volume >= 100:
-        return []
+        return ["-f", "32768"]
     return ["-f", str(round(volume / 100 * 32768))]
 
 
