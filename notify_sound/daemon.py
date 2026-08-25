@@ -489,7 +489,13 @@ class NotifyDaemon:
         cfg = config.load_config()
         canonical = None
         comm = None
-        if (
+        if app_name == "notify-sound":
+            # Notificación propia (subcomando `notify-sound done`): se
+            # identifica por su raw app_name, antes de la resolución de
+            # comm/desktop_entry, para evitar un dbus-send extra y que el
+            # comm del proceso (p. ej. python3) no la enmascare.
+            canonical = app_name
+        elif (
             desktop_entry
             and isinstance(desktop_entry, str)
             and 0 < len(desktop_entry) <= config.MAX_APP_NAME_LENGTH
@@ -605,7 +611,14 @@ class NotifyDaemon:
                     self._last_play_at[app_name] = time.monotonic()
                     player.play_choice(urgency_choice, volume=volume)
                     return
-        choice = app_cfg.get("sound") or cfg.get("sound")
+        if app_name == "notify-sound":
+            # Notificación propia: sonido de finalización configurable
+            # (done_sound) en lugar del sonido del app/global. Si falta o
+            # está vacío, no se reproduce (comportamiento actual sin
+            # sonido configurado).
+            choice = cfg.get("done_sound")
+        else:
+            choice = app_cfg.get("sound") or cfg.get("sound")
         if choice:
             self._last_play_at[app_name] = time.monotonic()
             player.play_choice(choice, volume=volume)

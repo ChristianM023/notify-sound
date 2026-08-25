@@ -1571,6 +1571,187 @@ class DaemonTests(ConfigTests):
         timeout_add.assert_called_once()
         self.assertEqual(timeout_add.call_args.args[0], 1000)
 
+    def test_own_notification_uses_done_sound(self):
+        # La notificación propia (app_name `notify-sound`, enviada por el
+        # subcomando `notify-sound done`) reproduce `done_sound` en lugar
+        # del sonido global (DONE-001).
+        instance, monitor = self.make_daemon(
+            notification("notify-sound", trailing_blank=False)
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("complete", volume=100)
+        self.assertEqual(instance.seen, {"notify-sound"})
+
+    def test_own_notification_uses_custom_done_sound(self):
+        done_sound = "/tmp/notify-sound-test-done.wav"
+        self.write_config({"done_sound": done_sound})
+        instance, monitor = self.make_daemon(
+            notification("notify-sound", trailing_blank=False)
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with(done_sound, volume=100)
+
+    def test_own_notification_without_done_sound_is_silent(self):
+        # done_sound ausente o None: la notificación propia no reproduce
+        # (comportamiento actual sin sonido configurado).
+        for cfg in (
+            {
+                "enabled": True,
+                "sound": "message",
+                "debounce_window": 2.0,
+                "urgency_sounds": {
+                    "low": None,
+                    "normal": None,
+                    "critical": None,
+                },
+                "apps": {},
+            },
+            {
+                "enabled": True,
+                "sound": "message",
+                "done_sound": None,
+                "debounce_window": 2.0,
+                "urgency_sounds": {
+                    "low": None,
+                    "normal": None,
+                    "critical": None,
+                },
+                "apps": {},
+            },
+        ):
+            with self.subTest(done_sound=cfg.get("done_sound")):
+                instance, monitor = self.make_daemon(
+                    notification("notify-sound", trailing_blank=False)
+                )
+                with mock.patch.object(
+                    config, "load_config", return_value=cfg
+                ), mock.patch.object(player, "play_choice") as play:
+                    instance._reader(monitor)
+                play.assert_not_called()
+
+    def test_own_notification_skips_sender_resolution(self):
+        # El reconocimiento de la notificación propia va antes de la
+        # resolución de comm: no se consulta el sender (DONE-001).
+        resolve = mock.Mock(return_value="python3")
+        with mock.patch.object(daemon, "_resolve_sender_to_comm", resolve):
+            instance, monitor = self.make_daemon(
+                notification("notify-sound", trailing_blank=False),
+                resolve_sender=True,
+            )
+            with mock.patch.object(player, "play_choice") as play:
+                instance._reader(monitor)
+        resolve.assert_not_called()
+        play.assert_called_once_with("complete", volume=100)
+
+    def test_own_notification_ignores_desktop_entry_hint(self):
+        # El reconocimiento por raw app_name gana al hint desktop-entry:
+        # la notificación propia nunca se canonaliza al comm de otra app.
+        instance, monitor = self.make_daemon(
+            notification(
+                "notify-sound",
+                hints=(("desktop-entry", "aimp"),),
+                trailing_blank=False,
+            )
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("complete", volume=100)
+        self.assertEqual(instance.seen, {"notify-sound"})
+
+    def test_other_app_uses_global_sound_not_done_sound(self):
+        # Una app distinta de notify-sound sigue usando el sonido global;
+        # done_sound solo aplica a la notificación propia (DONE-001).
+        self.write_config({"sound": "message", "done_sound": "complete"})
+        instance, monitor = self.make_daemon(
+            notification("warp", trailing_blank=False)
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("message", volume=100)
+
+    def test_own_notification_respects_suppress_sound(self):
+        instance, monitor = self.make_daemon(
+            notification(
+                "notify-sound",
+                hints=("suppress-sound",),
+                trailing_blank=False,
+            )
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_not_called()
+
+    def test_own_notification_respects_no_duplicate(self):
+        instance, monitor = self.make_daemon(
+            notification(
+                "notify-sound", hints=("sound-name",), trailing_blank=False
+            )
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_not_called()
+
+    def test_own_notification_respects_master_enabled(self):
+        self.write_config({"enabled": False})
+        instance, monitor = self.make_daemon(
+            notification("notify-sound", trailing_blank=False)
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_not_called()
+
+    def test_own_notification_respects_debounce(self):
+        payload = notification("notify-sound") + notification(
+            "notify-sound", trailing_blank=False
+        )
+        instance, monitor = self.make_daemon(payload)
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("complete", volume=100)
+
+    def test_own_notification_respects_app_volume(self):
+        self.write_config(
+            {
+                "apps": {
+                    "notify-sound": {
+                        "enabled": True,
+                        "sound": None,
+                        "volume": 50,
+                    }
+                }
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification("notify-sound", trailing_blank=False)
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("complete", volume=50)
+
+    def test_own_notification_respects_urgency_override(self):
+        critical_sound = "/tmp/notify-sound-test-critical.wav"
+        self.write_config(
+            {
+                "urgency_sounds": {
+                    "low": None,
+                    "normal": None,
+                    "critical": critical_sound,
+                },
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification(
+                "notify-sound",
+                hints=(("urgency", 2),),
+                trailing_blank=False,
+            )
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with(critical_sound, volume=100)
+
 
 class ProcessRegressionTests(unittest.TestCase):
     def write_executable(self, path, content):
