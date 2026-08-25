@@ -1096,6 +1096,120 @@ class DaemonTests(ConfigTests):
             instance._maybe_play("warp", set(), cfg, urgency=5)
         play.assert_called_once_with("message", volume=100)
 
+    def test_debounce_burst_plays_once(self):
+        # Ráfaga de la misma app: con la ventana default (2.0 s) solo
+        # suena la primera; la segunda se descarta (DEB-001).
+        payload = notification("chat") + notification(
+            "chat", trailing_blank=False
+        )
+        instance, monitor = self.make_daemon(payload)
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("message", volume=100)
+
+    def test_debounce_first_notification_always_plays(self):
+        # Sin timestamp previo, la primera notificación de una app
+        # siempre suena (DEB-001).
+        instance, monitor = self.make_daemon(
+            notification("chat", trailing_blank=False)
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("message", volume=100)
+
+    def test_debounce_window_zero_disables(self):
+        # Ventana 0 desactiva el debounce: todas las notificaciones de la
+        # ráfaga suenan (DEB-001).
+        self.write_config({"debounce_window": 0})
+        payload = notification("chat") + notification(
+            "chat", trailing_blank=False
+        )
+        instance, monitor = self.make_daemon(payload)
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        self.assertEqual(play.call_count, 2)
+
+    def test_debounce_is_per_app(self):
+        # Una app ruidosa no silencia a otras: cada app tiene su propia
+        # ventana (DEB-001).
+        payload = (
+            notification("chat")
+            + notification("chat", trailing_blank=False)
+            + notification("mail", trailing_blank=False)
+        )
+        instance, monitor = self.make_daemon(payload)
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        self.assertEqual(play.call_count, 2)
+
+    def test_debounce_suppressed_notification_does_not_block_next(self):
+        # Una notificación suprimida no actualiza el timestamp: la
+        # siguiente audible de la misma app suena (DEB-001).
+        payload = notification(
+            "chat", hints=("suppress-sound",)
+        ) + notification("chat", trailing_blank=False)
+        instance, monitor = self.make_daemon(payload)
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("message", volume=100)
+
+    def test_debounce_no_duplicate_does_not_block_next(self):
+        # no_duplicate descarta antes del debounce y no actualiza el
+        # timestamp: la siguiente audible de la misma app suena (DEB-001).
+        payload = notification(
+            "chat", hints=("sound-name",)
+        ) + notification("chat", trailing_blank=False)
+        instance, monitor = self.make_daemon(payload)
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("message", volume=100)
+
+    def test_debounce_timestamp_not_updated_on_discard(self):
+        # El timestamp se actualiza solo al reproducir; una notificación
+        # descartada por debounce no lo mueve (DEB-001).
+        cfg = {
+            "enabled": True,
+            "sound": "message",
+            "debounce_window": 2.0,
+            "urgency_sounds": {
+                "low": None,
+                "normal": None,
+                "critical": None,
+            },
+            "apps": {},
+        }
+        instance = daemon.NotifyDaemon()
+        with mock.patch.object(player, "play_choice") as play:
+            instance._maybe_play("chat", set(), cfg)
+            first_ts = instance._last_play_at["chat"]
+            instance._maybe_play("chat", set(), cfg)
+        play.assert_called_once_with("message", volume=100)
+        self.assertEqual(instance._last_play_at["chat"], first_ts)
+
+    def test_debounce_applies_to_urgency_override(self):
+        # El debounce también aplica al override por urgencia: una ráfaga
+        # de notificaciones críticas suena una sola vez (DEB-001).
+        critical_sound = "/tmp/notify-sound-test-critical.wav"
+        self.write_config(
+            {
+                "sound": "message",
+                "urgency_sounds": {
+                    "low": None,
+                    "normal": None,
+                    "critical": critical_sound,
+                },
+            }
+        )
+        payload = notification(
+            "warp", hints=(("urgency", 2),)
+        ) + notification(
+            "warp", hints=(("urgency", 2),), trailing_blank=False
+        )
+        instance, monitor = self.make_daemon(payload)
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with(critical_sound, volume=100)
+
     def test_desktop_entry_hint_overrides_per_app_config_lookup(self):
         self.write_config(
             {

@@ -278,6 +278,7 @@ class NotifyDaemon:
         initial_state = config.load_state()
         self.seen = set(initial_state.get("apps_seen", []))
         self._meta_cache = dict(initial_state.get("app_meta", {}))
+        self._last_play_at = {}
         self.lock = threading.Lock()
         self.monitor_lock = threading.Lock()
         self.stopping = False
@@ -575,6 +576,16 @@ class NotifyDaemon:
             "no_duplicate", True
         ):
             return
+        # Debounce anti-ráfaga (DEB-001): dentro de la ventana configurada
+        # solo suena una vez por app. El timestamp se actualiza solo al
+        # reproducir; las notificaciones descartadas no lo mueven y las
+        # suprimidas por reglas anteriores ya retornaron antes de llegar
+        # aquí. Ventana 0 desactiva el descarte (todas suenan).
+        debounce_window = cfg.get("debounce_window", 2.0)
+        if debounce_window > 0:
+            now = time.monotonic()
+            if now - self._last_play_at.get(app_name, 0.0) < debounce_window:
+                return
         # Volumen por app (0-100): se aplica tanto al sonido propio de la
         # app como al global y al override por urgencia. Ausente o None ->
         # 100 (comportamiento actual); config ya normaliza valores
@@ -591,10 +602,12 @@ class NotifyDaemon:
             if level is not None:
                 urgency_choice = cfg.get("urgency_sounds", {}).get(level)
                 if urgency_choice is not None:
+                    self._last_play_at[app_name] = time.monotonic()
                     player.play_choice(urgency_choice, volume=volume)
                     return
         choice = app_cfg.get("sound") or cfg.get("sound")
         if choice:
+            self._last_play_at[app_name] = time.monotonic()
             player.play_choice(choice, volume=volume)
 
     def on_signal(self, signum, frame):
