@@ -245,6 +245,7 @@ class ConfigTests(unittest.TestCase):
             ],
             "no_duplicate": True,
             "autostart": True,
+            "debounce_window": 2.0,
             "urgency_sounds": {
                 "low": None,
                 "normal": None,
@@ -443,6 +444,29 @@ class ConfigTests(unittest.TestCase):
                 loaded["urgency_sounds"],
                 {"low": None, "normal": None, "critical": None},
                 msg=str(value),
+            )
+
+    def test_debounce_window_default_when_absent(self):
+        self.write_config({"enabled": True, "sound": "message"})
+        loaded = config.load_config()
+        self.assertEqual(loaded["debounce_window"], 2.0)
+
+    def test_debounce_window_valid_values_are_loaded(self):
+        for value, expected in ((5.0, 5.0), (0, 0.0), (0.5, 0.5), (10, 10.0)):
+            self.write_config({"debounce_window": value})
+            loaded = config.load_config()
+            self.assertEqual(
+                loaded["debounce_window"], expected, msg=str(value)
+            )
+            self.assertIsInstance(loaded["debounce_window"], float)
+
+    def test_debounce_window_invalid_values_use_default(self):
+        invalid = [-1.0, "2.0", None, True, False, [], {}]
+        for value in invalid:
+            self.write_config({"debounce_window": value})
+            loaded = config.load_config()
+            self.assertEqual(
+                loaded["debounce_window"], 2.0, msg=str(value)
             )
 
     def test_json_files_are_private_and_state_is_bounded(self):

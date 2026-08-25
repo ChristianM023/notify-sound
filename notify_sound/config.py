@@ -47,6 +47,7 @@ DEFAULT_CONFIG = {
     "custom_sounds": [],
     "no_duplicate": True,
     "autostart": True,
+    "debounce_window": 2.0,
     "urgency_sounds": {"low": None, "normal": None, "critical": None},
     "apps": {},
 }
@@ -278,6 +279,7 @@ def load_config():
         "custom_sounds": list(DEFAULT_CONFIG["custom_sounds"]),
         "no_duplicate": DEFAULT_CONFIG["no_duplicate"],
         "autostart": DEFAULT_CONFIG["autostart"],
+        "debounce_window": DEFAULT_CONFIG["debounce_window"],
         "urgency_sounds": dict(DEFAULT_CONFIG["urgency_sounds"]),
         "apps": {},
     }
@@ -305,6 +307,13 @@ def load_config():
                 ]
             elif key == "urgency_sounds":
                 cfg["urgency_sounds"] = _normalize_urgency_sounds(value)
+            elif (
+                key == "debounce_window"
+                and isinstance(value, (int, float))
+                and not isinstance(value, bool)
+                and value >= 0
+            ):
+                cfg["debounce_window"] = float(value)
             elif key in ("enabled", "no_duplicate", "autostart") and isinstance(
                 value, bool
             ):
