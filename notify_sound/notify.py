@@ -8,6 +8,13 @@ y `dbus-send` solo puede enviar `dict:string:string:` (`a{ss}`), que el
 servidor de notificaciones rechaza con InvalidArgs. Además, `dbus-send` sin
 `--print-reply` retorna exit code 0 aunque el servidor rechace la
 notificación, ocultando el fallo.
+
+El app_name enviado es `notify-send` (no `notify-sound`): verificado
+empíricamente en GNOME, gnome-shell descarta las notificaciones con
+app_name `notify-sound` (no muestra el banner) mientras que `notify-send`
+sí se muestra. El marcador de notificación propia viaja en el hint
+`x-notify-sound-done`, que el daemon usa para reconocerla sin depender del
+app_name.
 """
 
 import os
@@ -19,6 +26,36 @@ from gi.repository import Gio, GLib
 
 DEFAULT_MESSAGE = "Comando finalizado"
 _DBUS_CALL_TIMEOUT_MS = 2000
+
+
+def _build_notify_params(message):
+    """Construye el Variant `(susssasa{sv}i)` de Notify con VariantBuilder.
+
+    El constructor directo de GLib.Variant no maneja `a{sv}` con dicts de
+    Python (verificado empíricamente); VariantBuilder construye los hints
+    como entradas `{sv}` explícitas. El app_name es `notify-send` para que
+    gnome-shell muestre el banner; el hint `x-notify-sound-done` marca la
+    notificación como propia para el daemon.
+    """
+    builder = GLib.VariantBuilder(GLib.VariantType("(susssasa{sv}i)"))
+    builder.add_value(GLib.Variant("s", "notify-send"))  # app_name
+    builder.add_value(GLib.Variant("u", 0))               # replaces_id
+    builder.add_value(GLib.Variant("s", ""))              # app_icon
+    builder.add_value(GLib.Variant("s", "NotifySound"))   # summary
+    builder.add_value(GLib.Variant("s", message))         # body
+    builder.add_value(
+        GLib.VariantBuilder(GLib.VariantType("as")).end()  # actions vacío
+    )
+    hints_builder = GLib.VariantBuilder(GLib.VariantType("a{sv}"))
+    hints_builder.add_value(
+        GLib.Variant("{sv}", ("urgency", GLib.Variant("y", 1)))
+    )
+    hints_builder.add_value(
+        GLib.Variant("{sv}", ("x-notify-sound-done", GLib.Variant("s", "1")))
+    )
+    builder.add_value(hints_builder.end())  # hints
+    builder.add_value(GLib.Variant("i", -1))  # expire_timeout
+    return builder.end()
 
 
 def send_done_notification(message=None):
@@ -41,10 +78,7 @@ def send_done_notification(message=None):
         bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
     except GLib.Error:
         return False, "NotifySound: no se pudo conectar al bus de sesión D-Bus."
-    params = GLib.Variant(
-        "(susssasa{sv}i)",
-        ("notify-sound", 0, "", "NotifySound", message, [], {}, -1),
-    )
+    params = _build_notify_params(message)
     try:
         bus.call_sync(
             "org.freedesktop.Notifications",

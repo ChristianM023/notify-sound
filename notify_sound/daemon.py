@@ -489,12 +489,14 @@ class NotifyDaemon:
         cfg = config.load_config()
         canonical = None
         comm = None
-        if app_name == "notify-sound":
+        if "x-notify-sound-done" in hints:
             # Notificación propia (subcomando `notify-sound done`): se
-            # identifica por su raw app_name, antes de la resolución de
-            # comm/desktop_entry, para evitar un dbus-send extra y que el
-            # comm del proceso (p. ej. python3) no la enmascare.
-            canonical = app_name
+            # identifica por el hint propio x-notify-sound-done, no por el
+            # app_name (que es el genérico 'notify-send' para que
+            # gnome-shell muestre el banner). No se resuelve comm: es
+            # nuestra propia notificación y el comm del proceso (p. ej.
+            # python3) no debe enmascararla.
+            canonical = "notify-sound"
         elif (
             desktop_entry
             and isinstance(desktop_entry, str)

@@ -1577,11 +1577,16 @@ class DaemonTests(ConfigTests):
         self.assertEqual(timeout_add.call_args.args[0], 1000)
 
     def test_own_notification_uses_done_sound(self):
-        # La notificación propia (app_name `notify-sound`, enviada por el
-        # subcomando `notify-sound done`) reproduce `done_sound` en lugar
-        # del sonido global (DONE-001).
+        # La notificación propia (app_name `notify-send` + hint
+        # `x-notify-sound-done`, enviada por el subcomando `notify-sound
+        # done`) reproduce `done_sound` en lugar del sonido global
+        # (DONE-001).
         instance, monitor = self.make_daemon(
-            notification("notify-sound", trailing_blank=False)
+            notification(
+                "notify-send",
+                hints=(("x-notify-sound-done", "1"), ("urgency", 1)),
+                trailing_blank=False,
+            )
         )
         with mock.patch.object(player, "play_choice") as play:
             instance._reader(monitor)
@@ -1592,7 +1597,11 @@ class DaemonTests(ConfigTests):
         done_sound = "/tmp/notify-sound-test-done.wav"
         self.write_config({"done_sound": done_sound})
         instance, monitor = self.make_daemon(
-            notification("notify-sound", trailing_blank=False)
+            notification(
+                "notify-send",
+                hints=(("x-notify-sound-done", "1"), ("urgency", 1)),
+                trailing_blank=False,
+            )
         )
         with mock.patch.object(player, "play_choice") as play:
             instance._reader(monitor)
@@ -1628,7 +1637,11 @@ class DaemonTests(ConfigTests):
         ):
             with self.subTest(done_sound=cfg.get("done_sound")):
                 instance, monitor = self.make_daemon(
-                    notification("notify-sound", trailing_blank=False)
+                    notification(
+                        "notify-send",
+                        hints=(("x-notify-sound-done", "1"), ("urgency", 1)),
+                        trailing_blank=False,
+                    )
                 )
                 with mock.patch.object(
                     config, "load_config", return_value=cfg
@@ -1637,12 +1650,17 @@ class DaemonTests(ConfigTests):
                 play.assert_not_called()
 
     def test_own_notification_skips_sender_resolution(self):
-        # El reconocimiento de la notificación propia va antes de la
-        # resolución de comm: no se consulta el sender (DONE-001).
+        # El reconocimiento de la notificación propia va por el hint
+        # x-notify-sound-done, antes de la resolución de comm: no se
+        # consulta el sender (DONE-001).
         resolve = mock.Mock(return_value="python3")
         with mock.patch.object(daemon, "_resolve_sender_to_comm", resolve):
             instance, monitor = self.make_daemon(
-                notification("notify-sound", trailing_blank=False),
+                notification(
+                    "notify-send",
+                    hints=(("x-notify-sound-done", "1"), ("urgency", 1)),
+                    trailing_blank=False,
+                ),
                 resolve_sender=True,
             )
             with mock.patch.object(player, "play_choice") as play:
@@ -1651,12 +1669,17 @@ class DaemonTests(ConfigTests):
         play.assert_called_once_with("complete", volume=100)
 
     def test_own_notification_ignores_desktop_entry_hint(self):
-        # El reconocimiento por raw app_name gana al hint desktop-entry:
-        # la notificación propia nunca se canonaliza al comm de otra app.
+        # El reconocimiento por hint x-notify-sound-done gana al hint
+        # desktop-entry: la notificación propia nunca se canonaliza al
+        # comm de otra app.
         instance, monitor = self.make_daemon(
             notification(
-                "notify-sound",
-                hints=(("desktop-entry", "aimp"),),
+                "notify-send",
+                hints=(
+                    ("desktop-entry", "aimp"),
+                    ("x-notify-sound-done", "1"),
+                    ("urgency", 1),
+                ),
                 trailing_blank=False,
             )
         )
@@ -1666,11 +1689,13 @@ class DaemonTests(ConfigTests):
         self.assertEqual(instance.seen, {"notify-sound"})
 
     def test_other_app_uses_global_sound_not_done_sound(self):
-        # Una app distinta de notify-sound sigue usando el sonido global;
-        # done_sound solo aplica a la notificación propia (DONE-001).
+        # Una notificación con app_name `notify-send` pero SIN el hint
+        # x-notify-sound-done no es propia: sigue el flujo canónico y usa
+        # el sonido global; done_sound solo aplica a la notificación
+        # propia (DONE-001).
         self.write_config({"sound": "message", "done_sound": "complete"})
         instance, monitor = self.make_daemon(
-            notification("warp", trailing_blank=False)
+            notification("notify-send", trailing_blank=False)
         )
         with mock.patch.object(player, "play_choice") as play:
             instance._reader(monitor)
@@ -1679,8 +1704,12 @@ class DaemonTests(ConfigTests):
     def test_own_notification_respects_suppress_sound(self):
         instance, monitor = self.make_daemon(
             notification(
-                "notify-sound",
-                hints=("suppress-sound",),
+                "notify-send",
+                hints=(
+                    "suppress-sound",
+                    ("x-notify-sound-done", "1"),
+                    ("urgency", 1),
+                ),
                 trailing_blank=False,
             )
         )
@@ -1691,7 +1720,13 @@ class DaemonTests(ConfigTests):
     def test_own_notification_respects_no_duplicate(self):
         instance, monitor = self.make_daemon(
             notification(
-                "notify-sound", hints=("sound-name",), trailing_blank=False
+                "notify-send",
+                hints=(
+                    "sound-name",
+                    ("x-notify-sound-done", "1"),
+                    ("urgency", 1),
+                ),
+                trailing_blank=False,
             )
         )
         with mock.patch.object(player, "play_choice") as play:
@@ -1701,15 +1736,24 @@ class DaemonTests(ConfigTests):
     def test_own_notification_respects_master_enabled(self):
         self.write_config({"enabled": False})
         instance, monitor = self.make_daemon(
-            notification("notify-sound", trailing_blank=False)
+            notification(
+                "notify-send",
+                hints=(("x-notify-sound-done", "1"), ("urgency", 1)),
+                trailing_blank=False,
+            )
         )
         with mock.patch.object(player, "play_choice") as play:
             instance._reader(monitor)
         play.assert_not_called()
 
     def test_own_notification_respects_debounce(self):
-        payload = notification("notify-sound") + notification(
-            "notify-sound", trailing_blank=False
+        payload = notification(
+            "notify-send",
+            hints=(("x-notify-sound-done", "1"), ("urgency", 1)),
+        ) + notification(
+            "notify-send",
+            hints=(("x-notify-sound-done", "1"), ("urgency", 1)),
+            trailing_blank=False,
         )
         instance, monitor = self.make_daemon(payload)
         with mock.patch.object(player, "play_choice") as play:
@@ -1729,7 +1773,11 @@ class DaemonTests(ConfigTests):
             }
         )
         instance, monitor = self.make_daemon(
-            notification("notify-sound", trailing_blank=False)
+            notification(
+                "notify-send",
+                hints=(("x-notify-sound-done", "1"), ("urgency", 1)),
+                trailing_blank=False,
+            )
         )
         with mock.patch.object(player, "play_choice") as play:
             instance._reader(monitor)
@@ -1748,8 +1796,8 @@ class DaemonTests(ConfigTests):
         )
         instance, monitor = self.make_daemon(
             notification(
-                "notify-sound",
-                hints=(("urgency", 2),),
+                "notify-send",
+                hints=(("x-notify-sound-done", "1"), ("urgency", 2)),
                 trailing_blank=False,
             )
         )
@@ -2944,7 +2992,16 @@ class NotifySendTests(unittest.TestCase):
         self.assertIsInstance(params, GLib.Variant)
         self.assertEqual(
             params.unpack(),
-            ("notify-sound", 0, "", "NotifySound", body, [], {}, -1),
+            (
+                "notify-send",
+                0,
+                "",
+                "NotifySound",
+                body,
+                [],
+                {"urgency": 1, "x-notify-sound-done": "1"},
+                -1,
+            ),
         )
         self.assertEqual(
             args[5:],
