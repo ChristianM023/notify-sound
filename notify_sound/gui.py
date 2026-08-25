@@ -192,6 +192,26 @@ class NotifyWindow(Gtk.ApplicationWindow):
         self.no_dup_check.connect("toggled", self._on_no_dup_toggled)
         root.append(self.no_dup_check)
 
+        debounce_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        debounce_label = Gtk.Label(label="Anti-ráfaga (s):", xalign=0)
+        debounce_adjustment = Gtk.Adjustment(
+            value=float(self.cfg.get("debounce_window", 2.0)),
+            lower=0, upper=60, step_increment=0.5, page_increment=5, page_size=0,
+        )
+        self.debounce_spin = Gtk.SpinButton(
+            adjustment=debounce_adjustment, climb_rate=0, digits=1
+        )
+        self.debounce_spin.set_tooltip_text(
+            "Segundos entre sonidos de una misma app. 0 desactiva. "
+            "Dentro de la ventana, solo suena la primera notificación "
+            "de una ráfaga."
+        )
+        self.debounce_spin.props.valign = Gtk.Align.CENTER
+        self.debounce_spin.connect("value-changed", self._on_debounce_changed)
+        debounce_row.append(debounce_label)
+        debounce_row.append(self.debounce_spin)
+        root.append(debounce_row)
+
         separator = Gtk.Separator()
         root.append(separator)
 
@@ -867,6 +887,10 @@ class NotifyWindow(Gtk.ApplicationWindow):
 
     def _on_no_dup_toggled(self, check):
         self.cfg["no_duplicate"] = check.get_active()
+        self._save()
+
+    def _on_debounce_changed(self, spin):
+        self.cfg["debounce_window"] = float(spin.get_value())
         self._save()
 
     def _on_app_toggled(self, switch, param, app_name):

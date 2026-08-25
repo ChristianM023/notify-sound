@@ -2611,5 +2611,102 @@ class GuiUrgencyTests(unittest.TestCase):
         )
 
 
+class GuiDebounceTests(unittest.TestCase):
+    """Tests del control anti-ráfaga (DEB-001)."""
+
+    def _built_window(self, cfg):
+        """Ventana con `_build_ui` ejecutado (widgets GTK reales).
+
+        `Gtk.Widget.__init__` inicializa el GObject base sin pasar por
+        `NotifyWindow.__init__` (que leería config real y arrancaría
+        timers); `_build_ui` construye la UI completa sin display.
+        """
+        from notify_sound import gui
+
+        window = gui.NotifyWindow.__new__(gui.NotifyWindow)
+        gui.Gtk.Widget.__init__(window)
+        window.cfg = cfg
+        window.theme_ids = ["message"]
+        window.app_rows = {}
+        window.custom_rows = {}
+        window.urgency_rows = {}
+        window._rebuilding = False
+        with mock.patch.object(
+            config, "load_state", return_value={"apps_seen": [], "app_meta": {}}
+        ):
+            window._build_ui()
+        return window
+
+    def test_debounce_spin_initializes_from_config(self):
+        from notify_sound import gui
+
+        cfg = {
+            "enabled": True,
+            "sound": "message",
+            "custom_sounds": [],
+            "no_duplicate": True,
+            "autostart": True,
+            "debounce_window": 3.5,
+            "urgency_sounds": {"low": None, "normal": None, "critical": None},
+            "apps": {},
+        }
+        window = self._built_window(cfg)
+        self.assertIsInstance(window.debounce_spin, gui.Gtk.SpinButton)
+        self.assertEqual(window.debounce_spin.get_value(), 3.5)
+        adjustment = window.debounce_spin.get_adjustment()
+        self.assertEqual(adjustment.get_lower(), 0)
+        self.assertEqual(adjustment.get_upper(), 60)
+
+    def test_debounce_spin_defaults_to_2_0_when_missing(self):
+        cfg = {
+            "enabled": True,
+            "sound": "message",
+            "custom_sounds": [],
+            "no_duplicate": True,
+            "autostart": True,
+            "urgency_sounds": {"low": None, "normal": None, "critical": None},
+            "apps": {},
+        }
+        window = self._built_window(cfg)
+        self.assertEqual(window.debounce_spin.get_value(), 2.0)
+
+    def test_debounce_change_persists_and_saves(self):
+        from notify_sound import gui
+
+        cfg = {"debounce_window": 2.0}
+        window = _bare_window(cfg)
+        spin = mock.Mock()
+        spin.get_value.return_value = 4.5
+        with mock.patch.object(window, "_save") as save:
+            gui.NotifyWindow._on_debounce_changed(window, spin)
+        save.assert_called_once_with()
+        self.assertEqual(cfg["debounce_window"], 4.5)
+
+    def test_debounce_zero_is_valid(self):
+        from notify_sound import gui
+
+        cfg = {"debounce_window": 2.0}
+        window = _bare_window(cfg)
+        spin = mock.Mock()
+        spin.get_value.return_value = 0.0
+        with mock.patch.object(window, "_save") as save:
+            gui.NotifyWindow._on_debounce_changed(window, spin)
+        save.assert_called_once_with()
+        self.assertEqual(cfg["debounce_window"], 0.0)
+
+    def test_debounce_saves_float_not_int(self):
+        from notify_sound import gui
+
+        cfg = {"debounce_window": 2.0}
+        window = _bare_window(cfg)
+        spin = mock.Mock()
+        spin.get_value.return_value = 2  # int crudo del widget
+        with mock.patch.object(window, "_save") as save:
+            gui.NotifyWindow._on_debounce_changed(window, spin)
+        save.assert_called_once_with()
+        self.assertIsInstance(cfg["debounce_window"], float)
+        self.assertEqual(cfg["debounce_window"], 2.0)
+
+
 if __name__ == "__main__":
     unittest.main()
