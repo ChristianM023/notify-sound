@@ -11,6 +11,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import gi
+
+gi.require_version("Gio", "2.0")
+from gi.repository import Gio, GLib
+
 from notify_sound import cli, config, daemon, notify, player, sounds
 
 
@@ -2914,91 +2919,106 @@ class GuiDebounceTests(unittest.TestCase):
 class NotifySendTests(unittest.TestCase):
     """Tests del helper de envío D-Bus (`notify_sound/notify.py`)."""
 
-    EXPECTED_COMMAND = [
-        "dbus-send", "--session",
-        "--dest=org.freedesktop.Notifications",
-        "/org/freedesktop/Notifications",
-        "org.freedesktop.Notifications.Notify",
-        "string:notify-sound",
-        "uint32:0",
-        "string:",
-        "string:NotifySound",
-        "string:Comando finalizado",
-        "array:string:",
-        "dict:string:string:",
-        "int32:-1",
-    ]
+    DEST = "org.freedesktop.Notifications"
+    PATH = "/org/freedesktop/Notifications"
+    INTERFACE = "org.freedesktop.Notifications"
+    METHOD = "Notify"
+
+    def _fake_gio(self, bus=None):
+        """Fake de `notify.Gio` con `bus_get_sync` devolviendo `bus`."""
+        fake_gio = mock.Mock()
+        fake_gio.BusType.SESSION = "session"
+        fake_gio.DBusCallFlags.NONE = 0
+        fake_gio.bus_get_sync.return_value = bus
+        return fake_gio
+
+    def _assert_notify_call(self, bus, body):
+        """Verifica que `bus.call_sync` se invocó con los parámetros exactos."""
+        bus.call_sync.assert_called_once()
+        args = bus.call_sync.call_args.args
+        self.assertEqual(args[0], self.DEST)
+        self.assertEqual(args[1], self.PATH)
+        self.assertEqual(args[2], self.INTERFACE)
+        self.assertEqual(args[3], self.METHOD)
+        params = args[4]
+        self.assertIsInstance(params, GLib.Variant)
+        self.assertEqual(
+            params.unpack(),
+            ("notify-sound", 0, "", "NotifySound", body, [], {}, -1),
+        )
+        self.assertEqual(
+            args[5:],
+            (None, 0, notify._DBUS_CALL_TIMEOUT_MS, None),
+        )
 
     def test_send_uses_exact_dbus_command_with_default_message(self):
-        with mock.patch.object(
-            notify.subprocess, "run", return_value=mock.Mock(returncode=0)
-        ) as run:
+        bus = mock.Mock()
+        with mock.patch.object(notify, "Gio", self._fake_gio(bus)):
             ok, error = notify.send_done_notification()
         self.assertTrue(ok)
         self.assertIsNone(error)
-        run.assert_called_once_with(
-            self.EXPECTED_COMMAND, capture_output=True, text=True, timeout=2
-        )
+        self._assert_notify_call(bus, "Comando finalizado")
 
     def test_custom_message_is_passed_as_body(self):
-        with mock.patch.object(
-            notify.subprocess, "run", return_value=mock.Mock(returncode=0)
-        ) as run:
+        bus = mock.Mock()
+        with mock.patch.object(notify, "Gio", self._fake_gio(bus)):
             ok, _ = notify.send_done_notification("build completo")
         self.assertTrue(ok)
-        command = run.call_args.args[0]
-        self.assertIn("string:build completo", command)
+        self._assert_notify_call(bus, "build completo")
 
     def test_blank_message_uses_default(self):
-        with mock.patch.object(
-            notify.subprocess, "run", return_value=mock.Mock(returncode=0)
-        ) as run:
+        bus = mock.Mock()
+        with mock.patch.object(notify, "Gio", self._fake_gio(bus)):
             ok, _ = notify.send_done_notification("   ")
         self.assertTrue(ok)
-        command = run.call_args.args[0]
-        self.assertIn("string:Comando finalizado", command)
+        self._assert_notify_call(bus, "Comando finalizado")
 
     def test_empty_message_uses_default(self):
-        with mock.patch.object(
-            notify.subprocess, "run", return_value=mock.Mock(returncode=0)
-        ) as run:
+        bus = mock.Mock()
+        with mock.patch.object(notify, "Gio", self._fake_gio(bus)):
             ok, _ = notify.send_done_notification("")
         self.assertTrue(ok)
-        command = run.call_args.args[0]
-        self.assertIn("string:Comando finalizado", command)
+        self._assert_notify_call(bus, "Comando finalizado")
 
     def test_missing_session_bus_returns_failure_without_running(self):
         with mock.patch.dict(os.environ, {}, clear=True):
             with mock.patch.object(
-                notify.subprocess, "run", return_value=mock.Mock(returncode=0)
-            ) as run:
+                notify, "Gio", self._fake_gio()
+            ) as fake_gio:
                 ok, error = notify.send_done_notification()
         self.assertFalse(ok)
         self.assertIn("DBUS_SESSION_BUS_ADDRESS", error)
-        run.assert_not_called()
+        fake_gio.bus_get_sync.assert_not_called()
 
-    def test_missing_dbus_send_returns_failure(self):
-        with mock.patch.object(
-            notify.subprocess, "run", side_effect=FileNotFoundError
-        ) as run:
+    def test_bus_connection_failure_returns_failure(self):
+        fake_gio = self._fake_gio()
+        fake_gio.bus_get_sync.side_effect = GLib.Error.new_literal(
+            Gio.io_error_quark(), "no hay bus", 0
+        )
+        with mock.patch.object(notify, "Gio", fake_gio):
             ok, error = notify.send_done_notification()
         self.assertFalse(ok)
-        self.assertIn("dbus-send", error)
+        self.assertIn("conectar al bus", error)
 
-    def test_nonzero_returncode_returns_failure(self):
-        with mock.patch.object(
-            notify.subprocess, "run",
-            return_value=mock.Mock(returncode=1, stderr="boom"),
-        ) as run:
+    def test_call_sync_error_returns_failure(self):
+        bus = mock.Mock()
+        bus.call_sync.side_effect = GLib.Error.new_literal(
+            Gio.io_error_quark(), "boom", 0
+        )
+        with mock.patch.object(notify, "Gio", self._fake_gio(bus)):
             ok, error = notify.send_done_notification()
         self.assertFalse(ok)
-        self.assertIn("código 1", error)
+        self.assertIn("falló", error)
 
     def test_timeout_returns_failure(self):
-        with mock.patch.object(
-            notify.subprocess, "run",
-            side_effect=subprocess.TimeoutExpired("dbus-send", 2),
-        ) as run:
+        bus = mock.Mock()
+        bus.call_sync.side_effect = GLib.Error.new_literal(
+            Gio.io_error_quark(),
+            "GDBus.Error:org.freedesktop.DBus.Error.Timeout: "
+            "Activatable service timed out",
+            0,
+        )
+        with mock.patch.object(notify, "Gio", self._fake_gio(bus)):
             ok, error = notify.send_done_notification()
         self.assertFalse(ok)
         self.assertIn("falló", error)
