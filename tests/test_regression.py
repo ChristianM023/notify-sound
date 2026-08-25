@@ -239,6 +239,7 @@ class ConfigTests(unittest.TestCase):
         current = {
             "enabled": True,
             "sound": "alarm-clock-elapsed",
+            "done_sound": "complete",
             "custom_sounds": [
                 "/tmp/notify-sound-test-I-Feel-Good.wav",
                 "/tmp/notify-sound-test-Whistle.wav",
@@ -467,6 +468,27 @@ class ConfigTests(unittest.TestCase):
             loaded = config.load_config()
             self.assertEqual(
                 loaded["debounce_window"], 2.0, msg=str(value)
+            )
+
+    def test_done_sound_default_when_absent(self):
+        self.assertEqual(config.DEFAULT_CONFIG["done_sound"], "complete")
+        self.write_config({"enabled": True, "sound": "message"})
+        loaded = config.load_config()
+        self.assertEqual(loaded["done_sound"], "complete")
+
+    def test_done_sound_valid_values_are_loaded(self):
+        for value in ("complete", "/tmp/done.wav", "x" * config.MAX_PATH_LENGTH):
+            self.write_config({"done_sound": value})
+            loaded = config.load_config()
+            self.assertEqual(loaded["done_sound"], value, msg=str(value))
+
+    def test_done_sound_invalid_values_use_default(self):
+        invalid = ["", "x" * (config.MAX_PATH_LENGTH + 1), 5, None, True, [], {}]
+        for value in invalid:
+            self.write_config({"done_sound": value})
+            loaded = config.load_config()
+            self.assertEqual(
+                loaded["done_sound"], "complete", msg=str(value)
             )
 
     def test_json_files_are_private_and_state_is_bounded(self):
