@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from notify_sound import config, daemon, notify, player, sounds
+from notify_sound import cli, config, daemon, notify, player, sounds
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -3002,6 +3002,107 @@ class NotifySendTests(unittest.TestCase):
             ok, error = notify.send_done_notification()
         self.assertFalse(ok)
         self.assertIn("falló", error)
+
+
+class DoneSubcommandTests(unittest.TestCase):
+    """Tests del subcomando `done` (`notify_sound/cli.py` + entrypoint)."""
+
+    def _load_entrypoint(self):
+        import importlib.util
+        from importlib.machinery import SourceFileLoader
+
+        path = str(ROOT / "notify-sound")
+        loader = SourceFileLoader("notify_sound_entrypoint", path)
+        spec = importlib.util.spec_from_file_location(
+            "notify_sound_entrypoint", path, loader=loader
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_fallback_plays_done_sound_when_daemon_absent(self):
+        with mock.patch.object(
+            notify, "send_done_notification", return_value=(True, None)
+        ) as send, mock.patch.object(
+            config, "is_running", return_value=False
+        ), mock.patch.object(
+            config, "load_config", return_value={"done_sound": "complete"}
+        ), mock.patch.object(player, "play_choice") as play:
+            code = cli.run_done()
+        self.assertEqual(code, 0)
+        send.assert_called_once_with(None)
+        play.assert_called_once_with("complete")
+
+    def test_fallback_uses_custom_done_sound_from_config(self):
+        with mock.patch.object(
+            notify, "send_done_notification", return_value=(True, None)
+        ), mock.patch.object(config, "is_running", return_value=False), mock.patch.object(
+            config, "load_config", return_value={"done_sound": "/tmp/custom.wav"}
+        ), mock.patch.object(player, "play_choice") as play:
+            code = cli.run_done()
+        self.assertEqual(code, 0)
+        play.assert_called_once_with("/tmp/custom.wav")
+
+    def test_no_direct_play_when_daemon_running(self):
+        with mock.patch.object(
+            notify, "send_done_notification", return_value=(True, None)
+        ), mock.patch.object(config, "is_running", return_value=True), mock.patch.object(
+            config, "load_config"
+        ) as load, mock.patch.object(player, "play_choice") as play:
+            code = cli.run_done("build completo")
+        self.assertEqual(code, 0)
+        play.assert_not_called()
+        load.assert_not_called()
+
+    def test_custom_message_is_forwarded_to_send(self):
+        with mock.patch.object(
+            notify, "send_done_notification", return_value=(True, None)
+        ) as send, mock.patch.object(config, "is_running", return_value=True):
+            code = cli.run_done("build completo")
+        self.assertEqual(code, 0)
+        send.assert_called_once_with("build completo")
+
+    def test_default_message_when_none(self):
+        with mock.patch.object(
+            notify, "send_done_notification", return_value=(True, None)
+        ) as send, mock.patch.object(config, "is_running", return_value=True):
+            code = cli.run_done()
+        self.assertEqual(code, 0)
+        send.assert_called_once_with(None)
+
+    def test_send_failure_prints_error_and_returns_1(self):
+        stderr = io.StringIO()
+        with mock.patch.object(
+            notify,
+            "send_done_notification",
+            return_value=(False, "NotifySound: boom"),
+        ) as send, mock.patch.object(config, "is_running") as running, mock.patch.object(
+            player, "play_choice"
+        ) as play, mock.patch.object(sys, "stderr", stderr):
+            code = cli.run_done()
+        self.assertEqual(code, 1)
+        self.assertIn("boom", stderr.getvalue())
+        send.assert_called_once_with(None)
+        running.assert_not_called()
+        play.assert_not_called()
+
+    def test_entrypoint_parses_done_before_flags(self):
+        module = self._load_entrypoint()
+        with mock.patch.object(
+            sys, "argv", ["notify-sound", "done", "build", "completo"]
+        ), mock.patch("notify_sound.cli.run_done", return_value=0) as run_done:
+            code = module.main()
+        self.assertEqual(code, 0)
+        run_done.assert_called_once_with("build completo")
+
+    def test_entrypoint_done_without_message_passes_none(self):
+        module = self._load_entrypoint()
+        with mock.patch.object(sys, "argv", ["notify-sound", "done"]), mock.patch(
+            "notify_sound.cli.run_done", return_value=0
+        ) as run_done:
+            code = module.main()
+        self.assertEqual(code, 0)
+        run_done.assert_called_once_with(None)
 
 
 if __name__ == "__main__":

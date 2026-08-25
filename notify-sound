@@ -7,15 +7,21 @@ sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 USAGE = """NotifySound: reproduce sonidos para notificaciones que no traen sonido.
 
 Uso:
-  notify-sound             Abre la interfaz gráfica
-  notify-sound --daemon    Inicia el daemon en segundo plano
-  notify-sound --quit      Detiene el daemon
-  notify-sound --version   Muestra la versión
+  notify-sound                  Abre la interfaz gráfica
+  notify-sound done [mensaje]   Envía una notificación de finalización
+  notify-sound --daemon         Inicia el daemon en segundo plano
+  notify-sound --quit           Detiene el daemon
+  notify-sound --version        Muestra la versión
 """
 
 
 def main():
     args = sys.argv[1:]
+    if args and args[0] == "done":
+        from notify_sound.cli import run_done
+
+        message = " ".join(args[1:]) if len(args) > 1 else None
+        return run_done(message)
     if "--daemon" in args:
         from notify_sound.daemon import main_daemon
 
