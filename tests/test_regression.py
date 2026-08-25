@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from notify_sound import config, daemon, player, sounds
+from notify_sound import config, daemon, notify, player, sounds
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -2728,6 +2728,99 @@ class GuiDebounceTests(unittest.TestCase):
         save.assert_called_once_with()
         self.assertIsInstance(cfg["debounce_window"], float)
         self.assertEqual(cfg["debounce_window"], 2.0)
+
+
+class NotifySendTests(unittest.TestCase):
+    """Tests del helper de envío D-Bus (`notify_sound/notify.py`)."""
+
+    EXPECTED_COMMAND = [
+        "dbus-send", "--session",
+        "--dest=org.freedesktop.Notifications",
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications.Notify",
+        "string:notify-sound",
+        "uint32:0",
+        "string:",
+        "string:NotifySound",
+        "string:Comando finalizado",
+        "array:string:",
+        "dict:string:string:",
+        "int32:-1",
+    ]
+
+    def test_send_uses_exact_dbus_command_with_default_message(self):
+        with mock.patch.object(
+            notify.subprocess, "run", return_value=mock.Mock(returncode=0)
+        ) as run:
+            ok, error = notify.send_done_notification()
+        self.assertTrue(ok)
+        self.assertIsNone(error)
+        run.assert_called_once_with(
+            self.EXPECTED_COMMAND, capture_output=True, text=True, timeout=2
+        )
+
+    def test_custom_message_is_passed_as_body(self):
+        with mock.patch.object(
+            notify.subprocess, "run", return_value=mock.Mock(returncode=0)
+        ) as run:
+            ok, _ = notify.send_done_notification("build completo")
+        self.assertTrue(ok)
+        command = run.call_args.args[0]
+        self.assertIn("string:build completo", command)
+
+    def test_blank_message_uses_default(self):
+        with mock.patch.object(
+            notify.subprocess, "run", return_value=mock.Mock(returncode=0)
+        ) as run:
+            ok, _ = notify.send_done_notification("   ")
+        self.assertTrue(ok)
+        command = run.call_args.args[0]
+        self.assertIn("string:Comando finalizado", command)
+
+    def test_empty_message_uses_default(self):
+        with mock.patch.object(
+            notify.subprocess, "run", return_value=mock.Mock(returncode=0)
+        ) as run:
+            ok, _ = notify.send_done_notification("")
+        self.assertTrue(ok)
+        command = run.call_args.args[0]
+        self.assertIn("string:Comando finalizado", command)
+
+    def test_missing_session_bus_returns_failure_without_running(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with mock.patch.object(
+                notify.subprocess, "run", return_value=mock.Mock(returncode=0)
+            ) as run:
+                ok, error = notify.send_done_notification()
+        self.assertFalse(ok)
+        self.assertIn("DBUS_SESSION_BUS_ADDRESS", error)
+        run.assert_not_called()
+
+    def test_missing_dbus_send_returns_failure(self):
+        with mock.patch.object(
+            notify.subprocess, "run", side_effect=FileNotFoundError
+        ) as run:
+            ok, error = notify.send_done_notification()
+        self.assertFalse(ok)
+        self.assertIn("dbus-send", error)
+
+    def test_nonzero_returncode_returns_failure(self):
+        with mock.patch.object(
+            notify.subprocess, "run",
+            return_value=mock.Mock(returncode=1, stderr="boom"),
+        ) as run:
+            ok, error = notify.send_done_notification()
+        self.assertFalse(ok)
+        self.assertIn("código 1", error)
+
+    def test_timeout_returns_failure(self):
+        with mock.patch.object(
+            notify.subprocess, "run",
+            side_effect=subprocess.TimeoutExpired("dbus-send", 2),
+        ) as run:
+            ok, error = notify.send_done_notification()
+        self.assertFalse(ok)
+        self.assertIn("falló", error)
 
 
 if __name__ == "__main__":
