@@ -288,6 +288,7 @@ class NotifyDaemon:
         self.monitor_started_at = None
         self._state_mtime = 0.0
         self._sync_seen_with_state()
+        self._ensure_own_app_registered()
 
     def _sync_seen_with_state(self):
         """Reconcile the in-memory ``seen`` set with persisted state.
@@ -312,6 +313,29 @@ class NotifyDaemon:
         with self.lock:
             self.seen &= persisted
             self._meta_cache = dict(state.get("app_meta", {}))
+
+    def _ensure_own_app_registered(self):
+        """Pre-registra la app propia 'notify-sound' en state para que
+        aparezca en la GUI sin necesidad de que suene la primera
+        notificación. No incrementa seen_count ni last_seen: es un
+        registro inicial, no una notificación recibida."""
+        if "notify-sound" in self.seen:
+            return
+        self.seen.add("notify-sound")
+        try:
+            state = config.load_state()
+        except (OSError, ValueError):
+            state = {"apps_seen": [], "app_meta": {}}
+        apps_seen = list(state.get("apps_seen", []))
+        if "notify-sound" not in apps_seen:
+            apps_seen.append("notify-sound")
+        app_meta = dict(state.get("app_meta", {}))
+        if "notify-sound" not in app_meta:
+            app_meta["notify-sound"] = {}
+        try:
+            config.save_state({"apps_seen": apps_seen, "app_meta": app_meta})
+        except OSError:
+            pass
 
     def _start_monitor(self):
         with self.monitor_lock:
@@ -613,14 +637,9 @@ class NotifyDaemon:
                     self._last_play_at[app_name] = time.monotonic()
                     player.play_choice(urgency_choice, volume=volume)
                     return
-        if app_name == "notify-sound":
-            # Notificación propia: sonido de finalización configurable
-            # (done_sound) en lugar del sonido del app/global. Si falta o
-            # está vacío, no se reproduce (comportamiento actual sin
-            # sonido configurado).
-            choice = cfg.get("done_sound")
-        else:
-            choice = app_cfg.get("sound") or cfg.get("sound")
+        # La app propia "notify-sound" sigue el flujo normal: sonido
+        # per-app (configurable en la GUI) o, si no tiene, el global.
+        choice = app_cfg.get("sound") or cfg.get("sound")
         if choice:
             self._last_play_at[app_name] = time.monotonic()
             player.play_choice(choice, volume=volume)

@@ -44,7 +44,6 @@ X-GNOME-Autostart-Delay=2
 DEFAULT_CONFIG = {
     "enabled": True,
     "sound": "message",
-    "done_sound": "complete",
     "custom_sounds": [],
     "no_duplicate": True,
     "autostart": True,
@@ -277,7 +276,6 @@ def load_config():
     cfg = {
         "enabled": DEFAULT_CONFIG["enabled"],
         "sound": DEFAULT_CONFIG["sound"],
-        "done_sound": DEFAULT_CONFIG["done_sound"],
         "custom_sounds": list(DEFAULT_CONFIG["custom_sounds"]),
         "no_duplicate": DEFAULT_CONFIG["no_duplicate"],
         "autostart": DEFAULT_CONFIG["autostart"],
@@ -322,12 +320,6 @@ def load_config():
                 cfg[key] = value
             elif (
                 key == "sound"
-                and isinstance(value, str)
-                and 0 < len(value) <= MAX_PATH_LENGTH
-            ):
-                cfg[key] = value
-            elif (
-                key == "done_sound"
                 and isinstance(value, str)
                 and 0 < len(value) <= MAX_PATH_LENGTH
             ):

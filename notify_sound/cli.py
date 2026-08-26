@@ -16,9 +16,10 @@ def run_done(message=None):
     Envía la notificación de finalización vía `notify.send_done_notification`
     (el helper normaliza mensaje vacío o None a "Comando finalizado"). Si el
     envío falla, imprime el error en stderr y retorna 1. Si el envío es
-    exitoso y el daemon no está corriendo, reproduce `done_sound`
-    directamente como fallback; si el daemon corre, no reproduce nada (el
-    daemon se encarga, mutuamente excluyente para evitar duplicados).
+    exitoso y el daemon no está corriendo, reproduce el sonido per-app de
+    "notify-sound" o, si no tiene, el global, directamente como fallback; si
+    el daemon corre, no reproduce nada (el daemon se encarga, mutuamente
+    excluyente para evitar duplicados).
     """
     ok, error = notify.send_done_notification(message)
     if not ok:
@@ -26,6 +27,13 @@ def run_done(message=None):
         return 1
     if not config.is_running():
         cfg = config.load_config()
-        done_sound = cfg.get("done_sound") or "complete"
-        player.play_choice(done_sound)
+        apps = cfg.get("apps", {})
+        if not isinstance(apps, dict):
+            apps = {}
+        app_cfg = apps.get("notify-sound", {})
+        if not isinstance(app_cfg, dict):
+            app_cfg = {}
+        choice = app_cfg.get("sound") or cfg.get("sound")
+        if choice:
+            player.play_choice(choice)
     return 0
