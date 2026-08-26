@@ -2329,6 +2329,419 @@ class DaemonTests(ConfigTests):
         self.assertNotIn("last_seen", meta)
 
 
+    def test_rule_sound_matches_plays_rule_sound(self):
+        # RULE-001: regla sobre body con contains que matchea -> se
+        # reproduce el sonido de la regla (no el del app/global).
+        self.write_config(
+            {
+                "sound": "message",
+                "apps": {
+                    "warp": {
+                        "enabled": True,
+                        "rules": [
+                            {
+                                "match": {
+                                    "field": "body",
+                                    "op": "contains",
+                                    "value": "esperando",
+                                },
+                                "action": "sound",
+                                "sound": "custom",
+                            }
+                        ],
+                    }
+                },
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification("warp", body="esperando permiso", trailing_blank=False)
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("custom", volume=100)
+
+    def test_rule_silence_matches_no_play(self):
+        # RULE-001: regla con action silence que matchea -> no se
+        # reproduce nada.
+        self.write_config(
+            {
+                "sound": "message",
+                "apps": {
+                    "warp": {
+                        "enabled": True,
+                        "rules": [
+                            {
+                                "match": {
+                                    "field": "body",
+                                    "op": "contains",
+                                    "value": "spam",
+                                },
+                                "action": "silence",
+                            }
+                        ],
+                    }
+                },
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification("warp", body="spam publicidad", trailing_blank=False)
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_not_called()
+
+    def test_rule_first_match_wins(self):
+        # RULE-001: si varias reglas matchean, gana la primera definida
+        # (orden de rules).
+        self.write_config(
+            {
+                "sound": "message",
+                "apps": {
+                    "warp": {
+                        "enabled": True,
+                        "rules": [
+                            {
+                                "match": {
+                                    "field": "body",
+                                    "op": "contains",
+                                    "value": "esperando",
+                                },
+                                "action": "sound",
+                                "sound": "first",
+                            },
+                            {
+                                "match": {
+                                    "field": "body",
+                                    "op": "contains",
+                                    "value": "esperando",
+                                },
+                                "action": "sound",
+                                "sound": "second",
+                            },
+                        ],
+                    }
+                },
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification("warp", body="esperando permiso", trailing_blank=False)
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("first", volume=100)
+
+    def test_rule_no_match_fallback_current(self):
+        # RULE-001: sin match -> comportamiento actual (sonido del
+        # app/global).
+        self.write_config(
+            {
+                "sound": "message",
+                "apps": {
+                    "warp": {
+                        "enabled": True,
+                        "rules": [
+                            {
+                                "match": {
+                                    "field": "body",
+                                    "op": "contains",
+                                    "value": "nunca aparece",
+                                },
+                                "action": "sound",
+                                "sound": "custom",
+                            }
+                        ],
+                    }
+                },
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification("warp", body="Body", trailing_blank=False)
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("message", volume=100)
+
+    def test_rule_summary_contains(self):
+        # RULE-001: regla sobre summary con contains -> matchea.
+        self.write_config(
+            {
+                "sound": "message",
+                "apps": {
+                    "warp": {
+                        "enabled": True,
+                        "rules": [
+                            {
+                                "match": {
+                                    "field": "summary",
+                                    "op": "contains",
+                                    "value": "Summ",
+                                },
+                                "action": "sound",
+                                "sound": "custom",
+                            }
+                        ],
+                    }
+                },
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification("warp", trailing_blank=False)
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("custom", volume=100)
+
+    def test_rule_urgency_eq(self):
+        # RULE-001: urgency se configura como regla sobre hint (eq con
+        # int) -> matchea (generaliza URG-001).
+        self.write_config(
+            {
+                "sound": "message",
+                "apps": {
+                    "warp": {
+                        "enabled": True,
+                        "rules": [
+                            {
+                                "match": {
+                                    "field": "urgency",
+                                    "op": "eq",
+                                    "value": 2,
+                                },
+                                "action": "sound",
+                                "sound": "custom",
+                            }
+                        ],
+                    }
+                },
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification(
+                "warp", hints=(("urgency", 2),), trailing_blank=False
+            )
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("custom", volume=100)
+
+    def test_rule_regex_matches(self):
+        # RULE-001: regla con op regex y patron valido -> matchea.
+        self.write_config(
+            {
+                "sound": "message",
+                "apps": {
+                    "warp": {
+                        "enabled": True,
+                        "rules": [
+                            {
+                                "match": {
+                                    "field": "body",
+                                    "op": "regex",
+                                    "value": r"^Body$",
+                                },
+                                "action": "sound",
+                                "sound": "custom",
+                            }
+                        ],
+                    }
+                },
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification("warp", body="Body", trailing_blank=False)
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("custom", volume=100)
+
+    def test_rule_field_unavailable_no_match(self):
+        # RULE-001: hint arbitrario no extraido por el parser (p. ej.
+        # category) no matchea -> fallback al sonido del app/global.
+        self.write_config(
+            {
+                "sound": "message",
+                "apps": {
+                    "warp": {
+                        "enabled": True,
+                        "rules": [
+                            {
+                                "match": {
+                                    "field": "category",
+                                    "op": "contains",
+                                    "value": "x",
+                                },
+                                "action": "sound",
+                                "sound": "custom",
+                            }
+                        ],
+                    }
+                },
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification("warp", trailing_blank=False)
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("message", volume=100)
+
+    def test_rule_does_not_override_suppress_sound(self):
+        # RULE-001: suppress-sound tiene prioridad sobre las reglas.
+        self.write_config(
+            {
+                "sound": "message",
+                "apps": {
+                    "warp": {
+                        "enabled": True,
+                        "rules": [
+                            {
+                                "match": {
+                                    "field": "body",
+                                    "op": "contains",
+                                    "value": "esperando",
+                                },
+                                "action": "sound",
+                                "sound": "custom",
+                            }
+                        ],
+                    }
+                },
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification(
+                "warp",
+                hints=("suppress-sound",),
+                body="esperando permiso",
+                trailing_blank=False,
+            )
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_not_called()
+
+    def test_rule_does_not_override_app_disabled(self):
+        # RULE-001: app deshabilitada -> nada; las reglas no la reactivan.
+        self.write_config(
+            {
+                "sound": "message",
+                "apps": {
+                    "warp": {
+                        "enabled": False,
+                        "rules": [
+                            {
+                                "match": {
+                                    "field": "body",
+                                    "op": "contains",
+                                    "value": "esperando",
+                                },
+                                "action": "sound",
+                                "sound": "custom",
+                            }
+                        ],
+                    }
+                },
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification("warp", body="esperando permiso", trailing_blank=False)
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_not_called()
+
+    def test_rule_does_not_override_own_sound_no_config(self):
+        # OWN-001: el descarte de sonido propio sin config ocurre antes
+        # de evaluar reglas (que solo existen para apps configuradas):
+        # app sin entrada en config.apps + sound-name -> no reproduce.
+        self.write_config({"sound": "message"})
+        instance, monitor = self.make_daemon(
+            notification("warp", hints=("sound-name",), trailing_blank=False)
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_not_called()
+
+    def test_rule_takes_priority_over_urgency_override(self):
+        # RULE-001: las reglas se evaluan antes del override por urgencia
+        # (URG-001 legacy) y tienen prioridad: si una regla matchea, se
+        # reproduce su sonido aunque urgency_sounds tenga override.
+        rule_sound = "/tmp/notify-sound-test-rule.wav"
+        critical_sound = "/tmp/notify-sound-test-critical.wav"
+        self.write_config(
+            {
+                "sound": "message",
+                "urgency_sounds": {
+                    "low": None,
+                    "normal": None,
+                    "critical": critical_sound,
+                },
+                "apps": {
+                    "warp": {
+                        "enabled": True,
+                        "rules": [
+                            {
+                                "match": {
+                                    "field": "body",
+                                    "op": "contains",
+                                    "value": "esperando",
+                                },
+                                "action": "sound",
+                                "sound": rule_sound,
+                            }
+                        ],
+                    }
+                },
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification(
+                "warp",
+                hints=(("urgency", 2),),
+                body="esperando permiso",
+                trailing_blank=False,
+            )
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with(rule_sound, volume=100)
+
+    def test_rule_sound_updates_last_play_at(self):
+        # RULE-001: reproducir por regla actualiza _last_play_at; la
+        # siguiente notificacion dentro de la ventana de debounce se
+        # descarta (DEB-001).
+        self.write_config(
+            {
+                "sound": "message",
+                "apps": {
+                    "warp": {
+                        "enabled": True,
+                        "rules": [
+                            {
+                                "match": {
+                                    "field": "body",
+                                    "op": "contains",
+                                    "value": "esperando",
+                                },
+                                "action": "sound",
+                                "sound": "custom",
+                            }
+                        ],
+                    }
+                },
+            }
+        )
+        payload = notification(
+            "warp", body="esperando permiso"
+        ) + notification(
+            "warp", body="esperando permiso", trailing_blank=False
+        )
+        instance, monitor = self.make_daemon(payload)
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("custom", volume=100)
+
+
 class ProcessRegressionTests(unittest.TestCase):
     def write_executable(self, path, content):
         path.parent.mkdir(parents=True, exist_ok=True)

@@ -41,6 +41,10 @@ _GENERIC_COMMS = {
 }
 
 _sender_cache = {}
+# Cache de regex compiladas para reglas RULE-001 (op "regex"). Sin
+# límite: las regex están acotadas por MAX_RULES por app y la cache
+# reutiliza el pattern compilado entre evaluaciones de la misma regla.
+_regex_cache = {}
 
 
 def _parse_sender(lines):
@@ -283,6 +287,58 @@ def _parse_block(lines):
     return app_name, hints, desktop_entry, urgency, summary, body
 
 
+def _match_rule(rule, summary, body, hints, desktop_entry, urgency):
+    """Evalúa una regla RULE-001 contra los campos extraídos del bloque.
+
+    Devuelve True si la regla matchea, False si no. Los campos ausentes
+    (None) nunca matchean; un hint arbitrario no extraído por el parser
+    tampoco (edge case "Body/summary ausentes → no matchean"). ``hints``
+    se recibe por firma pero no se usa para resolver el valor: el parser
+    solo extrae valores de desktop-entry y urgency; el resto de hints se
+    conoce por presencia, sin valor que matchear. Nunca lanza excepciones
+    con summary/body (ADR 0007: no se loguean ni persisten).
+    """
+    match = rule.get("match") if isinstance(rule, dict) else None
+    if not isinstance(match, dict):
+        return False
+    field = match.get("field")
+    op = match.get("op")
+    value = match.get("value")
+    if field == "body":
+        field_value = body
+    elif field == "summary":
+        field_value = summary
+    elif field == "urgency":
+        field_value = urgency
+    elif field == "desktop-entry":
+        field_value = desktop_entry
+    else:
+        # Hint arbitrario no extraído por el parser: sin valor que
+        # matchear, consistente con body/summary ausentes.
+        return False
+    if field_value is None:
+        return False
+    if op == "contains":
+        if not isinstance(field_value, str) or not isinstance(value, str):
+            return False
+        return value in field_value
+    if op == "regex":
+        if not isinstance(field_value, str) or not isinstance(value, str):
+            return False
+        pattern = _regex_cache.get(value)
+        if pattern is None:
+            try:
+                pattern = re.compile(value)
+            except re.error:
+                # Defensa en profundidad: config ya valida la regex.
+                return False
+            _regex_cache[value] = pattern
+        return pattern.search(field_value) is not None
+    if op == "eq":
+        return field_value == value
+    return False
+
+
 class NotifyDaemon:
     def __init__(self):
         self.loop = GLib.MainLoop()
@@ -519,9 +575,10 @@ class NotifyDaemon:
                 self._schedule_monitor_restart()
 
     def _handle_block(self, lines):
-        # summary/body se extraen en memoria (ADR 0007) pero aún no se
-        # usan: el matching por contenido llega en RULE-001 (subtarea 4).
-        app_name, hints, desktop_entry, urgency, _summary, _body = _parse_block(lines)
+        # summary/body se extraen en memoria (ADR 0007) y se pasan a
+        # _maybe_play para el matching por contenido (RULE-001); nunca
+        # se persisten ni se loguean.
+        app_name, hints, desktop_entry, urgency, summary, body = _parse_block(lines)
         if "x-shell-sender" in hints:
             return
         cfg = config.load_config()
@@ -559,7 +616,15 @@ class NotifyDaemon:
         if not canonical:
             return
         self._record_app(canonical, comm, hints)
-        self._maybe_play(canonical, hints, cfg, urgency)
+        self._maybe_play(
+            canonical,
+            hints,
+            cfg,
+            urgency,
+            summary=summary,
+            body=body,
+            desktop_entry=desktop_entry,
+        )
 
     @staticmethod
     def _find_synonym_owner(cfg, app_name):
@@ -605,11 +670,23 @@ class NotifyDaemon:
                 {"apps_seen": apps_seen, "app_meta": app_meta}
             )
 
-    def _maybe_play(self, app_name, hints, cfg=None, urgency=None):
+    def _maybe_play(
+        self,
+        app_name,
+        hints,
+        cfg=None,
+        urgency=None,
+        summary=None,
+        body=None,
+        desktop_entry=None,
+    ):
         # ``urgency`` (0=low, 1=normal, 2=critical) llega ya capturado por
-        # el parser. La regla de override por nivel (URG-001) va después de
-        # suppress-sound, per-app disabled y del descarte de sonido propio
-        # sin config, y antes de la elección del sonido del app/global.
+        # el parser. Orden de playback: suppress-sound → per-app disabled
+        # → descarte de sonido propio sin config (OWN-001) → debounce →
+        # reglas por contenido (RULE-001) → override por urgencia
+        # (URG-001, legacy; se migra en una subtarea posterior) → sonido
+        # del app/global. summary/body/desktop_entry viven solo durante
+        # esta llamada y se descartan al retornar (ADR 0007).
         if "suppress-sound" in hints:
             return
         if cfg is None:
@@ -649,6 +726,22 @@ class NotifyDaemon:
         volume = app_cfg.get("volume")
         if volume is None:
             volume = 100
+        # Reglas por contenido (RULE-001): evaluar las reglas de la app en
+        # orden. Primera que matchea gana: "sound" → reproducir y return;
+        # "silence" → return. Sin match → flujo actual (urgency override o
+        # sonido del app/global). Las reglas no sobreescriben suppress-sound
+        # ni el descarte de sonido propio sin config (OWN-001) — ya retornaron.
+        rules = app_cfg.get("rules")
+        if rules:
+            for rule in rules:
+                if _match_rule(rule, summary, body, hints, desktop_entry, urgency):
+                    action = rule.get("action")
+                    if action == "sound":
+                        sound = rule.get("sound")
+                        if sound:
+                            self._last_play_at[app_name] = time.monotonic()
+                            player.play_choice(sound, volume=volume)
+                    return
         # Override por nivel de urgencia: si la notificación trae urgency
         # (0=low, 1=normal, 2=critical) y hay un sonido configurado para
         # ese nivel, se reproduce ese en lugar del sonido del app/global.
