@@ -574,6 +574,277 @@ class ConfigTests(unittest.TestCase):
             first.close()
             config.remove_pid()
 
+    def test_normalize_rules_valid(self):
+        # RULE-001: regla valida con contains se guarda normalizada.
+        rules = [
+            {
+                "match": {
+                    "field": "body",
+                    "op": "contains",
+                    "value": "esperando permiso",
+                },
+                "action": "sound",
+                "sound": "/tmp/rule.wav",
+            }
+        ]
+        self.assertEqual(
+            config._normalize_rules(rules),
+            [
+                {
+                    "match": {
+                        "field": "body",
+                        "op": "contains",
+                        "value": "esperando permiso",
+                    },
+                    "action": "sound",
+                    "sound": "/tmp/rule.wav",
+                }
+            ],
+        )
+
+    def test_normalize_rules_regex_valid(self):
+        # RULE-001: regex compilable se guarda tal cual.
+        rules = [
+            {
+                "match": {
+                    "field": "summary",
+                    "op": "regex",
+                    "value": r"^Comando .* listo$",
+                },
+                "action": "sound",
+                "sound": "message",
+            }
+        ]
+        normalized = config._normalize_rules(rules)
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["match"]["op"], "regex")
+        self.assertEqual(normalized[0]["match"]["value"], r"^Comando .* listo$")
+        self.assertEqual(normalized[0]["sound"], "message")
+
+    def test_normalize_rules_regex_invalid_discarded(self):
+        # RULE-001: regex invalida se descarta sin romper el resto.
+        rules = [
+            {
+                "match": {"field": "body", "op": "regex", "value": "[unclosed"},
+                "action": "sound",
+                "sound": "message",
+            },
+            {
+                "match": {"field": "body", "op": "contains", "value": "ok"},
+                "action": "sound",
+                "sound": "message",
+            },
+        ]
+        normalized = config._normalize_rules(rules)
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["match"]["op"], "contains")
+
+    def test_normalize_rules_eq_int(self):
+        # RULE-001: eq con int (p. ej. urgency) se guarda.
+        rules = [
+            {
+                "match": {"field": "urgency", "op": "eq", "value": 2},
+                "action": "sound",
+                "sound": "critical",
+            }
+        ]
+        normalized = config._normalize_rules(rules)
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["match"]["value"], 2)
+
+    def test_normalize_rules_eq_bool_discarded(self):
+        # RULE-001: bool es subclase de int y se descarta como value de eq.
+        for value in (True, False):
+            rules = [
+                {
+                    "match": {"field": "urgency", "op": "eq", "value": value},
+                    "action": "sound",
+                    "sound": "critical",
+                }
+            ]
+            self.assertEqual(
+                config._normalize_rules(rules), [], msg=str(value)
+            )
+
+    def test_normalize_rules_silence_no_sound(self):
+        # RULE-001: action silence no requiere sound y no lo guarda.
+        rules = [
+            {
+                "match": {"field": "body", "op": "contains", "value": "spam"},
+                "action": "silence",
+            }
+        ]
+        normalized = config._normalize_rules(rules)
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["action"], "silence")
+        self.assertNotIn("sound", normalized[0])
+
+    def test_normalize_rules_sound_without_sound_discarded(self):
+        # RULE-001: action sound sin sound valido (ausente, None o vacio)
+        # descarta la regla.
+        variants = [
+            {
+                "match": {"field": "body", "op": "contains", "value": "x"},
+                "action": "sound",
+            },
+            {
+                "match": {"field": "body", "op": "contains", "value": "x"},
+                "action": "sound",
+                "sound": None,
+            },
+            {
+                "match": {"field": "body", "op": "contains", "value": "x"},
+                "action": "sound",
+                "sound": "",
+            },
+        ]
+        for rule in variants:
+            self.assertEqual(
+                config._normalize_rules([rule]), [], msg=str(rule)
+            )
+
+    def test_normalize_rules_malformed_discarded(self):
+        # RULE-001: reglas malformadas se descartan sin romper el resto.
+        long_value = "x" * (config.MAX_PATH_LENGTH + 1)
+        rules = [
+            "not-a-dict",
+            None,
+            {"match": "not-a-dict", "action": "sound", "sound": "x"},
+            {
+                "match": {"field": "", "op": "contains", "value": "x"},
+                "action": "sound",
+                "sound": "x",
+            },
+            {
+                "match": {"field": "body", "op": "bogus", "value": "x"},
+                "action": "sound",
+                "sound": "x",
+            },
+            {
+                "match": {"field": "body", "op": "contains", "value": "x"},
+                "action": "bogus",
+            },
+            {
+                "match": {"field": "body", "op": "contains", "value": ""},
+                "action": "sound",
+                "sound": "x",
+            },
+            {
+                "match": {"field": "body", "op": "contains", "value": long_value},
+                "action": "sound",
+                "sound": "x",
+            },
+            {
+                "match": {"field": "body", "op": "contains", "value": "x"},
+                "action": "sound",
+                "sound": long_value,
+            },
+        ]
+        self.assertEqual(config._normalize_rules(rules), [])
+
+    def test_normalize_rules_max_rules(self):
+        # RULE-001: el numero de reglas validas se acota a MAX_RULES.
+        rules = [
+            {
+                "match": {"field": "body", "op": "contains", "value": f"v{i}"},
+                "action": "sound",
+                "sound": "message",
+            }
+            for i in range(config.MAX_RULES + 10)
+        ]
+        normalized = config._normalize_rules(rules)
+        self.assertEqual(len(normalized), config.MAX_RULES)
+
+    def test_normalize_app_with_rules(self):
+        # RULE-001: _normalize_app conserva solo las reglas validas.
+        app = {
+            "enabled": True,
+            "sound": None,
+            "rules": [
+                {
+                    "match": {
+                        "field": "body",
+                        "op": "contains",
+                        "value": "esperando permiso",
+                    },
+                    "action": "sound",
+                    "sound": "/tmp/rule.wav",
+                },
+                {
+                    "match": {"field": "body", "op": "regex", "value": "[unclosed"},
+                    "action": "sound",
+                    "sound": "x",
+                },
+                {
+                    "match": {"field": "body", "op": "contains", "value": "spam"},
+                    "action": "silence",
+                },
+            ],
+        }
+        normalized = config._normalize_app(app)
+        self.assertEqual(len(normalized["rules"]), 2)
+        self.assertEqual(normalized["rules"][0]["action"], "sound")
+        self.assertEqual(normalized["rules"][0]["sound"], "/tmp/rule.wav")
+        self.assertEqual(normalized["rules"][1]["action"], "silence")
+        self.assertNotIn("sound", normalized["rules"][1])
+
+    def test_normalize_app_empty_rules_dropped(self):
+        # RULE-001: lista de reglas vacia o invalida -> el campo rules no
+        # aparece en el resultado (mismo criterio que synonyms).
+        variants = [
+            [],
+            None,
+            "not-a-list",
+            [
+                {
+                    "match": {"field": "body", "op": "contains", "value": "x"},
+                    "action": "bogus",
+                }
+            ],
+        ]
+        for rules in variants:
+            normalized = config._normalize_app(
+                {"enabled": True, "rules": rules}
+            )
+            self.assertNotIn("rules", normalized, msg=str(rules))
+
+    def test_load_config_persists_rules(self):
+        # RULE-001: load_config carga reglas validadas desde config.json.
+        self.write_config(
+            {
+                "apps": {
+                    "opencode": {
+                        "enabled": True,
+                        "rules": [
+                            {
+                                "match": {
+                                    "field": "body",
+                                    "op": "contains",
+                                    "value": "esperando permiso",
+                                },
+                                "action": "sound",
+                                "sound": "/tmp/rule.wav",
+                            },
+                            {
+                                "match": {
+                                    "field": "body",
+                                    "op": "regex",
+                                    "value": "[unclosed",
+                                },
+                                "action": "sound",
+                                "sound": "x",
+                            },
+                        ],
+                    }
+                }
+            }
+        )
+        loaded = config.load_config()
+        rules = loaded["apps"]["opencode"]["rules"]
+        self.assertEqual(len(rules), 1)
+        self.assertEqual(rules[0]["match"]["value"], "esperando permiso")
+        self.assertEqual(rules[0]["sound"], "/tmp/rule.wav")
+
 
 class SoundTests(unittest.TestCase):
     def test_theme_flac_is_listed(self):

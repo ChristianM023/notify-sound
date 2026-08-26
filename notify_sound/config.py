@@ -1,6 +1,7 @@
 import fcntl
 import json
 import os
+import re
 import shutil
 import tempfile
 
@@ -28,6 +29,7 @@ MAX_STATE_BYTES = 256 * 1024
 MAX_STATE_APPS = 512
 MAX_APP_NAME_LENGTH = 256
 MAX_SYNONYMS = 64
+MAX_RULES = 64
 MAX_PATH_LENGTH = 4096
 
 AUTOSTART_DESKTOP = """[Desktop Entry]
@@ -52,6 +54,8 @@ DEFAULT_CONFIG = {
 }
 
 _URGENCY_LEVELS = ("low", "normal", "critical")
+_RULE_OPS = ("contains", "regex", "eq")
+_RULE_ACTIONS = ("sound", "silence")
 
 
 def autostart_enabled():
@@ -102,6 +106,79 @@ def set_autostart(enabled):
             pass
 
 
+def _normalize_rules(rules):
+    """Normaliza la lista de reglas de una app (RULE-001).
+
+    Reglas malformadas se descartan sin romper el resto; el resultado se
+    acota a las primeras ``MAX_RULES`` reglas validas (las malformadas no
+    cuentan hacia el limite). Si el origen no es una lista, se devuelve
+    ``[]``. Cada regla valida queda como
+    ``{"match": {field, op, value}, "action": ...}`` y, si la accion es
+    ``"sound"``, con ``"sound"`` acotado (mismo criterio que el campo
+    ``sound`` de la app).
+    """
+    if not isinstance(rules, list):
+        return []
+    normalized = []
+    for rule in rules:
+        if len(normalized) >= MAX_RULES:
+            break
+        if not isinstance(rule, dict):
+            continue
+        match = rule.get("match")
+        if not isinstance(match, dict):
+            continue
+        field = match.get("field")
+        op = match.get("op")
+        value = match.get("value")
+        if not (
+            isinstance(field, str)
+            and 0 < len(field) <= MAX_APP_NAME_LENGTH
+        ):
+            continue
+        if op not in _RULE_OPS:
+            continue
+        if op in ("contains", "regex"):
+            if not (
+                isinstance(value, str)
+                and 0 < len(value) <= MAX_PATH_LENGTH
+            ):
+                continue
+        else:  # eq: int (no bool) o string acotado
+            if isinstance(value, bool):
+                continue
+            if not (
+                isinstance(value, int)
+                or (
+                    isinstance(value, str)
+                    and 0 < len(value) <= MAX_PATH_LENGTH
+                )
+            ):
+                continue
+        if op == "regex":
+            try:
+                re.compile(value)
+            except re.error:
+                continue
+        action = rule.get("action")
+        if action not in _RULE_ACTIONS:
+            continue
+        clean = {
+            "match": {"field": field, "op": op, "value": value},
+            "action": action,
+        }
+        if action == "sound":
+            sound = rule.get("sound")
+            if not (
+                isinstance(sound, str)
+                and 0 < len(sound) <= MAX_PATH_LENGTH
+            ):
+                continue
+            clean["sound"] = sound
+        normalized.append(clean)
+    return normalized
+
+
 def _normalize_app(app):
     normalized = dict(app) if isinstance(app, dict) else {}
     enabled = normalized.get("enabled", True)
@@ -147,6 +224,13 @@ def _normalize_app(app):
         and 0 <= volume <= 100
         else 100
     )
+    # Reglas por contenido/hints (RULE-001): se normalizan y se quitan si
+    # la lista queda vacia (mismo criterio que synonyms).
+    rules = _normalize_rules(normalized.get("rules"))
+    if rules:
+        normalized["rules"] = rules
+    else:
+        normalized.pop("rules", None)
     return normalized
 
 
