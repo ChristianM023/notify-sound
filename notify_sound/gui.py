@@ -299,11 +299,25 @@ class NotifyWindow(Gtk.ApplicationWindow):
     def _ensure_app_row(self, app_name):
         if app_name in self.app_rows:
             return
-        app_cfg = self.cfg.get("apps", {}).get(app_name, {})
+        apps_cfg = self.cfg.get("apps", {})
+        app_cfg = apps_cfg.get(app_name, {})
+        # OWN-001: estado inicial del switch. Si el usuario ya configuro la
+        # app en config.json, se respeta su eleccion; si es nueva (primera
+        # vez o tras vaciar lista) y la app reproduce su propio sonido, el
+        # switch aparece desactivado por defecto (pero siempre editable).
+        meta = config.load_state().get("app_meta", {}).get(app_name, {})
+        has_own_sound = bool(meta.get("has_own_sound", False))
+        if app_name in apps_cfg:
+            switch_active = bool(app_cfg.get("enabled", True))
+        else:
+            switch_active = not has_own_sound
         row = Gtk.ListBoxRow()
         box = Gtk.Box(
             orientation=Gtk.Orientation.HORIZONTAL, spacing=10,
             margin_top=4, margin_bottom=4,
+        )
+        name_box = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=2, hexpand=True,
         )
         name_label = Gtk.Label(
             label=self._display_name(app_name),
@@ -313,6 +327,25 @@ class NotifyWindow(Gtk.ApplicationWindow):
         )
         name_label.set_width_chars(28)
         name_label.set_max_width_chars(50)
+        # OWN-001: etiqueta/icono "Tiene sonido propio", visible siempre que
+        # la app reproduzca su propio sonido (informa, no bloquea).
+        own_sound_box = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=4, hexpand=True,
+        )
+        own_sound_box.set_tooltip_text(
+            "Esta app ya reproduce su propio sonido; "
+            "NotifySound no duplicará."
+        )
+        own_sound_icon = Gtk.Image(icon_name="audio-x-generic-symbolic")
+        own_sound_icon.props.valign = Gtk.Align.CENTER
+        own_sound_label = Gtk.Label(label="Tiene sonido propio", xalign=0)
+        own_sound_label.add_css_class("dim-label")
+        own_sound_label.props.valign = Gtk.Align.CENTER
+        own_sound_box.append(own_sound_icon)
+        own_sound_box.append(own_sound_label)
+        own_sound_box.set_visible(has_own_sound)
+        name_box.append(name_label)
+        name_box.append(own_sound_box)
         app_sound_dropdown = Gtk.DropDown()
         app_sound_dropdown.props.valign = Gtk.Align.CENTER
         app_sound_dropdown.connect(
@@ -348,7 +381,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
         info_button.set_tooltip_text("Información")
         info_button.props.valign = Gtk.Align.CENTER
         info_button.connect("clicked", self._on_app_info, app_name)
-        app_switch = Gtk.Switch(active=bool(app_cfg.get("enabled", True)))
+        app_switch = Gtk.Switch(active=switch_active)
         app_switch.props.valign = Gtk.Align.CENTER
         app_switch.connect("notify::active", self._on_app_toggled, app_name)
         remove_button = Gtk.Button()
@@ -356,7 +389,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
         remove_button.set_tooltip_text("Eliminar de la lista")
         remove_button.props.valign = Gtk.Align.CENTER
         remove_button.connect("clicked", self._on_app_remove, app_name)
-        box.append(name_label)
+        box.append(name_box)
         box.append(app_sound_dropdown)
         box.append(volume_scale)
         box.append(app_test_button)
@@ -372,6 +405,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
             "dropdown": app_sound_dropdown,
             "volume_scale": volume_scale,
             "name_label": name_label,
+            "own_sound_box": own_sound_box,
         }
         self._populate_app_dropdown(app_name, self.app_rows[app_name])
 
@@ -720,6 +754,9 @@ class NotifyWindow(Gtk.ApplicationWindow):
         if display != app_name:
             lines.append(f"Mostrado como: {display}")
         lines.append(f"Proceso emisor: {comm or '—'}")
+        lines.append(
+            f"Sonido propio: {'sí' if meta.get('has_own_sound') else 'no'}"
+        )
         lines.append(f"Número de sinónimos: {len(synonyms)}")
         lines.append(f"Notificaciones: {seen_count if seen_count else '—'}")
         if last_seen:
@@ -798,6 +835,16 @@ class NotifyWindow(Gtk.ApplicationWindow):
             if app_name not in self.app_rows:
                 self._ensure_app_row(app_name)
                 added = True
+        # OWN-001: visibilidad de la etiqueta "Tiene sonido propio" en vivo
+        # para apps ya existentes cuando has_own_sound cambie en state.json.
+        app_meta = state.get("app_meta", {})
+        for app_name, entry in self.app_rows.items():
+            own_sound_box = entry.get("own_sound_box")
+            if own_sound_box is not None:
+                meta = app_meta.get(app_name, {})
+                own_sound_box.set_visible(
+                    bool(meta.get("has_own_sound", False))
+                )
         if added and self.sort_dropdown is not None:
             self._reorder_apps(self.sort_dropdown.get_selected())
         self.state_label.set_text(
