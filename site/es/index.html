@@ -66,7 +66,7 @@
     <h2><span>01</span><span>El problema</span></h2>
     <div class="problem-box">
       <p>En GNOME, una notificación solo hace sonido cuando la app que la envía incluye explícitamente un hint <strong>sound-name</strong> o <strong>sound-file</strong>. La mayoría de apps nunca lo hacen — Warp, terminales, compilaciones de IDE, herramientas tipo cron — así que sus notificaciones quedan <strong>completamente mudas</strong>.</p>
-      <p>Las apps que sí reproducen su propio sonido (Telegram, PWAs de WhatsApp, etc.) no se tocan por defecto. Desactiva &quot;no repetir&quot; si quieres ambos sonidos intencionadamente.</p>
+      <p>Las apps que sí reproducen su propio sonido (Telegram, PWAs de WhatsApp, etc.) no se tocan por defecto: se marcan con la etiqueta &quot;Tiene sonido propio&quot; y su alternador por app aparece desactivado. Activa el alternador de esa app si quieres oír ambos sonidos intencionadamente.</p>
     </div>
   </div>
 </section>
@@ -208,7 +208,7 @@ notify-send "Prueba" "Si oyes un sonido, funciona"</code></pre>
     <ul>
       <li><strong>No suena nada:</strong> asegúrate de que <code>canberra-gtk-play</code> está instalado y el daemon está en ejecución.</li>
       <li><strong>Un archivo de sonido personalizado (MP3, M4A...) no suena:</strong> instala GStreamer o uno de <code>ffplay</code>, <code>mpv</code>, <code>mpg123</code>.</li>
-      <li><strong>Las notificaciones con sonido propio se reproducen dos veces:</strong> activa &quot;no repetir&quot; en la GUI.</li>
+      <li><strong>Las notificaciones con sonido propio se reproducen dos veces:</strong> el alternador de esa app está activado (elegiste oír ambos). Desactívalo en la GUI para conservar solo el sonido propio de la app.</li>
       <li><strong>Llega una notificación pero no reproduce sonido:</strong> la app puede enviar <code>suppress-sound</code> (intencional) — comprueba el alternador de esa app.</li>
     </ul>
     <p>Consulta el <a href="https://github.com/ChristianM023/notify-sound/blob/main/README.es.md#solución-de-problemas" target="_blank" rel="noopener">README</a> para la guía completa de solución de problemas.</p>

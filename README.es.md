@@ -119,7 +119,7 @@ dbus-monitor (eavesdrop=true)
 parser ──► resolución del nombre de la app (desktop-entry → comm → synonym → app_name)
         │
         ▼
-reglas de reproducción ──► activado? → suppress-sound? → por app? → no_duplicate? → reproducir
+reglas de reproducción ──► activado? → suppress-sound? → por app? → sonido propio (sin config)? → reproducir
         │
         ▼
 reproductor ──► canberra-gtk-play (OGG/WAV/FLAC) → fallback (gst → ffplay → mpv → mpg123)
@@ -167,7 +167,9 @@ notify-sound --quit     # stop the daemon
 - Añade cualquier número de **archivos de sonido personalizados**; aparecen en
   los selectores de sonido global y por app (la lista está limitada a 3 filas
   visibles con scroll)
-- Modo "No duplicar": conserva el sonido propio de la app cuando lo envía
+- Las apps que envían su propio sonido se detectan y se marcan con la
+  etiqueta "Tiene sonido propio"; su alternador por app aparece desactivado
+  por defecto (actívalo si quieres oír ambos sonidos a propósito)
 - Activación/desactivación por app, selección de sonido por app y botón
   **Probar** por app
 - **Alias de apps**: renombra las apps detectadas a un nombre visible amigable
@@ -208,7 +210,6 @@ Se almacena en `~/.config/notify-sound/config.json`:
   "enabled": true,
   "sound": "message",
   "custom_sounds": ["/path/to/my-sound.mp3"],
-  "no_duplicate": true,
   "autostart": true,
   "apps": {
     "warp": { "enabled": true, "sound": null },
@@ -286,10 +287,10 @@ tu usuario puede leerlos. El archivo de lock de instancia
   `canberra-gtk-play` solo decodifica OGG/WAV/FLAC. Para otros formatos
   NotifySound recurre a `gst-launch-1.0` (GStreamer), luego a `ffplay`, `mpv`
   o `mpg123` — instala al menos uno de ellos, p. ej. `sudo apt install gstreamer1.0-plugins-base gstreamer1.0-plugins-good`.
-- **Las notificaciones con sonido propio se reproducen dos veces:** activa
-  "no_duplicate" en la GUI (desactivado significa que ambos sonidos suenan a
-  propósito). Si una app envía `suppress-sound`, NotifySound se silencia por
-  diseño.
+- **Las notificaciones con sonido propio se reproducen dos veces:** el
+  alternador de esa app está activado (elegiste oír ambos sonidos).
+  Desactívalo en la GUI para conservar solo el sonido propio de la app.
+  Si una app envía `suppress-sound`, NotifySound se silencia por diseño.
 - **Llega una notificación pero no reproduce sonido:** si la app envía
   `suppress-sound`, es intencional (la app reproduce su propio sonido). Si no,
   comprueba el alternador de esa app en la GUI.
@@ -389,9 +390,10 @@ comportamiento nuevo.
   clave ni el valor pueden falsear el framing.
 - Reglas de reproducción, en orden: `enabled` maestro apagado → nada; hint
   `suppress-sound` → siempre nada; app desactivada → nada; hint
-  `sound-file`/`sound-name` con `no_duplicate` → nada; si no, reproduce la
-  elección de la app o la elección global (un id de tema o una ruta de archivo
-  personalizada).
+  `sound-file`/`sound-name` sin configuración por app (la app no está en
+  `config.apps`) → nada (OWN-001: la app reproduce su propio sonido y el
+  usuario no eligió duplicarlo); si no, reproduce la elección de la app o la
+  elección global (un id de tema o una ruta de archivo personalizada).
 
 ### Ciclo de vida del daemon
 

@@ -184,14 +184,6 @@ class NotifyWindow(Gtk.ApplicationWindow):
         custom_scroll.set_child(self.custom_box)
         root.append(custom_scroll)
 
-        self.no_dup_check = Gtk.CheckButton(
-            label="No repetir si la app ya envía su propio sonido "
-            "(desmarcado: se oirán ambos)"
-        )
-        self.no_dup_check.set_active(bool(self.cfg.get("no_duplicate", True)))
-        self.no_dup_check.connect("toggled", self._on_no_dup_toggled)
-        root.append(self.no_dup_check)
-
         debounce_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         debounce_label = Gtk.Label(label="Anti-ráfaga (s):", xalign=0)
         debounce_adjustment = Gtk.Adjustment(
@@ -333,8 +325,9 @@ class NotifyWindow(Gtk.ApplicationWindow):
             orientation=Gtk.Orientation.HORIZONTAL, spacing=4, hexpand=True,
         )
         own_sound_box.set_tooltip_text(
-            "Esta app ya reproduce su propio sonido; "
-            "NotifySound no duplicará."
+            "Esta app ya reproduce su propio sonido. NotifySound no la "
+            "duplica por defecto (el switch está desactivado). Si activas "
+            "el switch, se oirán ambos sonidos."
         )
         own_sound_icon = Gtk.Image(icon_name="audio-x-generic-symbolic")
         own_sound_icon.props.valign = Gtk.Align.CENTER
@@ -931,10 +924,6 @@ class NotifyWindow(Gtk.ApplicationWindow):
         self._save()
         self._refresh_custom_list()
         self._rebuild_all_dropdowns()
-
-    def _on_no_dup_toggled(self, check):
-        self.cfg["no_duplicate"] = check.get_active()
-        self._save()
 
     def _on_debounce_changed(self, spin):
         self.cfg["debounce_window"] = float(spin.get_value())

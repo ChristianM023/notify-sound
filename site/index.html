@@ -66,7 +66,7 @@
     <h2><span>01</span><span>The problem</span></h2>
     <div class="problem-box">
       <p>On GNOME, a notification only makes a sound when the app that sent it explicitly includes a <strong>sound-name</strong> or <strong>sound-file</strong> hint. Most apps never do — Warp, terminals, IDE builds, cron-like tools — so their notifications stay <strong>completely silent</strong>.</p>
-      <p>Apps that do play their own sound (Telegram, WhatsApp PWAs, etc.) are left untouched by default. Disable &quot;no duplicate&quot; if you intentionally want both sounds.</p>
+      <p>Apps that do play their own sound (Telegram, WhatsApp PWAs, etc.) are left untouched by default: they are marked with a &quot;Tiene sonido propio&quot; label and their per-app switch is off. Enable the per-app switch if you intentionally want both sounds.</p>
     </div>
   </div>
 </section>
@@ -208,7 +208,7 @@ notify-send "Test" "If you hear a sound, it works"</code></pre>
     <ul>
       <li><strong>Nothing plays at all:</strong> make sure <code>canberra-gtk-play</code> is installed and the daemon is running.</li>
       <li><strong>Custom sound file (MP3, M4A...) does not play:</strong> install GStreamer or one of <code>ffplay</code>, <code>mpv</code>, <code>mpg123</code>.</li>
-      <li><strong>Notifications with their own sound are played twice:</strong> enable &quot;no_duplicate&quot; in the GUI.</li>
+      <li><strong>Notifications with their own sound are played twice:</strong> the per-app switch for that app is enabled (you chose to hear both). Disable it in the GUI to keep only the app's own sound.</li>
       <li><strong>A notification arrives but plays no sound:</strong> the app may send <code>suppress-sound</code> (intentional) — check the per-app toggle.</li>
     </ul>
     <p>See the <a href="https://github.com/ChristianM023/notify-sound#troubleshooting" target="_blank" rel="noopener">README</a> for the full troubleshooting guide.</p>
