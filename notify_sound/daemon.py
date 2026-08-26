@@ -544,7 +544,7 @@ class NotifyDaemon:
                 canonical = app_name
         if not canonical:
             return
-        self._record_app(canonical, comm)
+        self._record_app(canonical, comm, hints)
         self._maybe_play(canonical, hints, cfg, urgency)
 
     @staticmethod
@@ -559,7 +559,7 @@ class NotifyDaemon:
                 return owner
         return None
 
-    def _record_app(self, app_name, comm=None):
+    def _record_app(self, app_name, comm=None, hints=None):
         if not app_name:
             return
         self._sync_seen_with_state()
@@ -574,6 +574,12 @@ class NotifyDaemon:
             cached["last_seen"] = time.time()
             if comm:
                 cached["comm"] = comm
+            # OWN-001: flag no-sticky de sonido propio. Se actualiza en cada
+            # notificación: si la app deja de mandar sound-name/sound-file,
+            # el flag vuelve a false en la siguiente notificación.
+            cached["has_own_sound"] = bool(
+                hints and ("sound-file" in hints or "sound-name" in hints)
+            )
             self._meta_cache[app_name] = cached
             state = config.load_state()
             apps_seen = list(state.get("apps_seen", []))

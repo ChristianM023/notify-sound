@@ -418,6 +418,7 @@ def load_state():
                     seen_count = meta.get("seen_count", 0)
                     last_seen = meta.get("last_seen")
                     comm = meta.get("comm")
+                    has_own_sound = meta.get("has_own_sound")
                     entry = {}
                     if isinstance(seen_count, int) and seen_count >= 0:
                         entry["seen_count"] = seen_count
@@ -428,6 +429,10 @@ def load_state():
                         and 0 < len(comm) <= MAX_APP_NAME_LENGTH
                     ):
                         entry["comm"] = comm
+                    # OWN-001: has_own_sound (bool) se conserva solo si es
+                    # valido; ausente o invalido se omite (default false).
+                    if isinstance(has_own_sound, bool):
+                        entry["has_own_sound"] = has_own_sound
                     if entry:
                         app_meta[name] = entry
                     if len(app_meta) >= MAX_STATE_APPS:
@@ -469,12 +474,17 @@ def save_state(state):
             seen_count = meta.get("seen_count", 0)
             last_seen = meta.get("last_seen")
             comm = meta.get("comm")
+            has_own_sound = meta.get("has_own_sound")
             if isinstance(seen_count, int) and seen_count >= 0:
                 entry["seen_count"] = seen_count
             if isinstance(last_seen, (int, float)) and last_seen >= 0:
                 entry["last_seen"] = last_seen
             if isinstance(comm, str) and 0 < len(comm) <= MAX_APP_NAME_LENGTH:
                 entry["comm"] = comm
+            # OWN-001: has_own_sound (bool) se persiste solo si es valido;
+            # ausente o invalido se descarta (default false implicito).
+            if isinstance(has_own_sound, bool):
+                entry["has_own_sound"] = has_own_sound
             if entry:
                 app_meta[name] = entry
             if len(app_meta) >= MAX_STATE_APPS:

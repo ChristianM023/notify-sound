@@ -280,6 +280,43 @@ class ConfigTests(unittest.TestCase):
         Path(config.STATE_FILE).write_text(json.dumps(state), encoding="utf-8")
         self.assertEqual(config.load_state(), state)
 
+    def test_load_state_keeps_has_own_sound_bool_and_drops_invalid(self):
+        # OWN-001: load_state valida has_own_sound (bool). Ausente (legacy),
+        # invalido (str) -> se omite, default false implicito; bool valido
+        # (True o False) -> se conserva.
+        state = {
+            "apps_seen": ["warp", "telegram", "vlc", "legacy"],
+            "app_meta": {
+                "warp": {"seen_count": 1, "has_own_sound": True},
+                "telegram": {"seen_count": 1, "has_own_sound": "si"},
+                "vlc": {"seen_count": 1, "has_own_sound": False},
+                "legacy": {"seen_count": 1},
+            },
+        }
+        Path(config.STATE_FILE).write_text(json.dumps(state), encoding="utf-8")
+        loaded = config.load_state()
+        self.assertIs(loaded["app_meta"]["warp"]["has_own_sound"], True)
+        self.assertIs(loaded["app_meta"]["vlc"]["has_own_sound"], False)
+        self.assertNotIn("has_own_sound", loaded["app_meta"]["telegram"])
+        self.assertNotIn("has_own_sound", loaded["app_meta"]["legacy"])
+
+    def test_save_state_round_trips_has_own_sound(self):
+        # OWN-001: save_state persiste has_own_sound solo si es bool valido.
+        config.save_state(
+            {
+                "apps_seen": ["warp", "vlc", "telegram"],
+                "app_meta": {
+                    "warp": {"seen_count": 2, "has_own_sound": True},
+                    "vlc": {"seen_count": 2, "has_own_sound": False},
+                    "telegram": {"seen_count": 2, "has_own_sound": "si"},
+                },
+            }
+        )
+        loaded = config.load_state()
+        self.assertIs(loaded["app_meta"]["warp"]["has_own_sound"], True)
+        self.assertIs(loaded["app_meta"]["vlc"]["has_own_sound"], False)
+        self.assertNotIn("has_own_sound", loaded["app_meta"]["telegram"])
+
     def test_find_alias_owner_resolves_key_or_name(self):
         cfg = {
             "apps": {
@@ -1340,6 +1377,55 @@ class DaemonTests(ConfigTests):
         self.assertEqual(meta["comm"], "vlc")
         self.assertGreaterEqual(meta["seen_count"], 1)
         self.assertIn("last_seen", meta)
+
+    def test_sound_name_hint_sets_has_own_sound(self):
+        # OWN-001: notificacion con hint sound-name -> has_own_sound true
+        # persistido en state.json y en el meta cache.
+        instance, monitor = self.make_daemon(
+            notification("warp", hints=("sound-name",), trailing_blank=False)
+        )
+        with mock.patch.object(player, "play_choice"):
+            instance._reader(monitor)
+        self.assertIs(
+            config.load_state()["app_meta"]["warp"]["has_own_sound"], True
+        )
+        self.assertIs(instance._meta_cache["warp"]["has_own_sound"], True)
+
+    def test_sound_file_hint_sets_has_own_sound(self):
+        # OWN-001: notificacion con hint sound-file -> has_own_sound true.
+        instance, monitor = self.make_daemon(
+            notification("warp", hints=("sound-file",), trailing_blank=False)
+        )
+        with mock.patch.object(player, "play_choice"):
+            instance._reader(monitor)
+        self.assertIs(
+            config.load_state()["app_meta"]["warp"]["has_own_sound"], True
+        )
+
+    def test_without_sound_hints_has_own_sound_is_false(self):
+        # OWN-001: notificacion sin hints de sonido -> has_own_sound false.
+        instance, monitor = self.make_daemon(
+            notification("warp", trailing_blank=False)
+        )
+        with mock.patch.object(player, "play_choice"):
+            instance._reader(monitor)
+        self.assertIs(
+            config.load_state()["app_meta"]["warp"]["has_own_sound"], False
+        )
+
+    def test_has_own_sound_is_not_sticky(self):
+        # OWN-001: si la app manda sound-name (true) y luego deja de
+        # mandarlo, el flag vuelve a false en la siguiente notificacion.
+        payload = notification("warp", hints=("sound-name",)) + notification(
+            "warp", trailing_blank=False
+        )
+        instance, monitor = self.make_daemon(payload)
+        with mock.patch.object(player, "play_choice"):
+            instance._reader(monitor)
+        self.assertIs(
+            config.load_state()["app_meta"]["warp"]["has_own_sound"], False
+        )
+        self.assertIs(instance._meta_cache["warp"]["has_own_sound"], False)
 
     def test_sync_seen_with_state_relists_app_after_gui_reset(self):
         instance, monitor = self.make_daemon(
