@@ -886,7 +886,7 @@ class DaemonTests(ConfigTests):
         payload = notification(
             "app", hints=(("urgency", 2),), trailing_blank=False
         )
-        app_name, hints, desktop_entry, urgency = daemon._parse_block(
+        app_name, hints, desktop_entry, urgency, *_ = daemon._parse_block(
             _lines(payload)
         )
         self.assertEqual(urgency, 2)
@@ -894,7 +894,7 @@ class DaemonTests(ConfigTests):
 
     def test_parse_block_urgency_absent_is_none(self):
         payload = notification("app", trailing_blank=False)
-        app_name, hints, desktop_entry, urgency = daemon._parse_block(
+        app_name, hints, desktop_entry, urgency, *_ = daemon._parse_block(
             _lines(payload)
         )
         self.assertIsNone(urgency)
@@ -903,7 +903,7 @@ class DaemonTests(ConfigTests):
         payload = notification(
             "app", hints=(("urgency", 5),), trailing_blank=False
         )
-        app_name, hints, desktop_entry, urgency = daemon._parse_block(
+        app_name, hints, desktop_entry, urgency, *_ = daemon._parse_block(
             _lines(payload)
         )
         self.assertIsNone(urgency)
@@ -913,7 +913,7 @@ class DaemonTests(ConfigTests):
             payload = notification(
                 "app", hints=(("urgency", value),), trailing_blank=False
             )
-            app_name, hints, desktop_entry, urgency = daemon._parse_block(
+            app_name, hints, desktop_entry, urgency, *_ = daemon._parse_block(
                 _lines(payload)
             )
             self.assertEqual(urgency, value, msg=str(value))
@@ -938,18 +938,120 @@ class DaemonTests(ConfigTests):
             '         string "urgency"\n'
             "         variant             byte 2\n"
             "      )\n"
-            "      dict entry(\n"
-            '         string "sender-pid"\n'
-            "         variant             int64 198892\n"
+"      dict entry(\n"
+            '         string "urgency"\n'
+            "         variant             byte 2\n"
             "      )\n"
             "   ]\n"
             "   int32 -1\n"
         ).encode()
-        app_name, hints, desktop_entry, urgency = daemon._parse_block(
+        app_name, hints, desktop_entry, urgency, *_ = daemon._parse_block(
             _lines(payload)
         )
         self.assertEqual(urgency, 2)
         self.assertIn("urgency", hints)
+
+    def test_parse_block_captures_summary_and_body(self):
+        payload = notification(
+            "app", body="Cuerpo distintivo", trailing_blank=False
+        )
+        app_name, hints, desktop_entry, urgency, summary, body = (
+            daemon._parse_block(_lines(payload))
+        )
+        self.assertEqual(app_name, "app")
+        self.assertEqual(summary, "Summary")
+        self.assertEqual(body, "Cuerpo distintivo")
+
+    def test_parse_block_body_multiline(self):
+        # dbus-monitor escapa los saltos de línea reales como \\n dentro
+        # de las comillas; el tokenizer los decodifica a \n literales.
+        payload = (
+            "method call time=1 sender=:1.1 -> "
+            "destination=org.freedesktop.Notifications serial=1 "
+            "path=/org/freedesktop/Notifications; "
+            "interface=org.freedesktop.Notifications; member=Notify\n"
+            '   string "app"\n'
+            "   uint32 0\n"
+            '   string ""\n'
+            '   string "Summary"\n'
+            '   string "línea1\\n\\nlínea2"\n'
+            "   array [\n"
+            "   ]\n"
+            "   array [\n"
+            "   ]\n"
+            "   int32 -1\n"
+        ).encode()
+        app_name, hints, desktop_entry, urgency, summary, body = (
+            daemon._parse_block(_lines(payload))
+        )
+        self.assertEqual(summary, "Summary")
+        self.assertEqual(body, "línea1\n\nlínea2")
+
+    def test_parse_block_summary_body_absent(self):
+        # Payload malformado con menos strings top-level de los esperados:
+        # summary y body quedan None sin romper el parseo.
+        payload = (
+            "method call time=1 sender=:1.1 -> "
+            "destination=org.freedesktop.Notifications serial=1 "
+            "path=/org/freedesktop/Notifications; "
+            "interface=org.freedesktop.Notifications; member=Notify\n"
+            '   string "app"\n'
+            "   uint32 0\n"
+            '   string ""\n'
+            "   array [\n"
+            "   ]\n"
+            "   array [\n"
+            "   ]\n"
+            "   int32 -1\n"
+        ).encode()
+        app_name, hints, desktop_entry, urgency, summary, body = (
+            daemon._parse_block(_lines(payload))
+        )
+        self.assertEqual(app_name, "app")
+        self.assertIsNone(summary)
+        self.assertIsNone(body)
+
+    def test_parse_block_gtk_has_no_summary_body(self):
+        # AddNotification (GTK) no tiene summary/body top-level: van
+        # dentro del dict de hints. summary y body quedan None.
+        payload = gtk_notification(trailing_blank=False)
+        app_name, hints, desktop_entry, urgency, summary, body = (
+            daemon._parse_block(_lines(payload))
+        )
+        self.assertEqual(app_name, "org.gnome.Ptyxis")
+        self.assertIsNone(summary)
+        self.assertIsNone(body)
+
+    def test_parse_block_real_dbus_monitor_format_with_body(self):
+        # Formato real de dbus-monitor (alineación de tipos a columna
+        # fija) con summary y body reales, incluido un salto de línea
+        # escapado en el cuerpo.
+        payload = (
+            "method call time=1 sender=:1.1445 -> "
+            "destination=:1.33 serial=1 path=/org/freedesktop/Notifications; "
+            "interface=org.freedesktop.Notifications; member=Notify\n"
+            '   string "notify-send"\n'
+            "   uint32 0\n"
+            '   string ""\n'
+            '   string "Título real"\n'
+            '   string "Cuerpo real con \\n\\n salto"\n'
+            "   array [\n"
+            "   ]\n"
+            "   array [\n"
+            "      dict entry(\n"
+            '         string "urgency"\n'
+            "         variant             byte 2\n"
+            "      )\n"
+            "   ]\n"
+            "   int32 -1\n"
+        ).encode()
+        app_name, hints, desktop_entry, urgency, summary, body = (
+            daemon._parse_block(_lines(payload))
+        )
+        self.assertEqual(app_name, "notify-send")
+        self.assertEqual(summary, "Título real")
+        self.assertEqual(body, "Cuerpo real con \n\n salto")
+        self.assertEqual(urgency, 2)
 
     def test_urgency_without_mapping_keeps_current_playback(self):
         instance, monitor = self.make_daemon(

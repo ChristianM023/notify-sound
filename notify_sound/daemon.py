@@ -248,13 +248,23 @@ def _parse_block(lines):
     desktop_entry = None
     urgency = None
     expecting_hint = False
+    top_strings = []
+    in_top_strings = True
     for token_type, value in _dbus_tokens(lines):
         if token_type == "dict":
             expecting_hint = True
             hint_key = None
+            in_top_strings = False
         elif token_type == "string":
-            if app_name is None:
-                app_name = value
+            if in_top_strings:
+                # Strings top-level antes del primer dict entry: en el
+                # método Notify son [app_name, app_icon, summary, body]
+                # (replaces_id es uint32 y no emite token). En
+                # AddNotification (GTK) son [app, id]: summary y body
+                # quedan None. Solo viven en memoria (ADR 0007).
+                top_strings.append(value)
+                if app_name is None:
+                    app_name = value
             elif expecting_hint and hint_key is None:
                 hint_key = value
                 hints.add(value)
@@ -268,7 +278,9 @@ def _parse_block(lines):
             if value in (0, 1, 2):
                 urgency = value
             expecting_hint = False
-    return app_name, hints, desktop_entry, urgency
+    summary = top_strings[2] if len(top_strings) > 2 else None
+    body = top_strings[3] if len(top_strings) > 3 else None
+    return app_name, hints, desktop_entry, urgency, summary, body
 
 
 class NotifyDaemon:
@@ -507,7 +519,9 @@ class NotifyDaemon:
                 self._schedule_monitor_restart()
 
     def _handle_block(self, lines):
-        app_name, hints, desktop_entry, urgency = _parse_block(lines)
+        # summary/body se extraen en memoria (ADR 0007) pero aún no se
+        # usan: el matching por contenido llega en RULE-001 (subtarea 4).
+        app_name, hints, desktop_entry, urgency, _summary, _body = _parse_block(lines)
         if "x-shell-sender" in hints:
             return
         cfg = config.load_config()
