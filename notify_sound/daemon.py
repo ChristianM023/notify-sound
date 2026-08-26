@@ -683,10 +683,9 @@ class NotifyDaemon:
         # ``urgency`` (0=low, 1=normal, 2=critical) llega ya capturado por
         # el parser. Orden de playback: suppress-sound → per-app disabled
         # → descarte de sonido propio sin config (OWN-001) → debounce →
-        # reglas por contenido (RULE-001) → override por urgencia
-        # (URG-001, legacy; se migra en una subtarea posterior) → sonido
-        # del app/global. summary/body/desktop_entry viven solo durante
-        # esta llamada y se descartan al retornar (ADR 0007).
+        # reglas por contenido (RULE-001) → sonido del app/global.
+        # summary/body/desktop_entry viven solo durante esta llamada y se
+        # descartan al retornar (ADR 0007).
         if "suppress-sound" in hints:
             return
         if cfg is None:
@@ -720,17 +719,17 @@ class NotifyDaemon:
             if now - self._last_play_at.get(app_name, 0.0) < debounce_window:
                 return
         # Volumen por app (0-100): se aplica tanto al sonido propio de la
-        # app como al global y al override por urgencia. Ausente o None ->
-        # 100 (comportamiento actual); config ya normaliza valores
-        # inválidos a 100.
+        # app como al global y al de las reglas. Ausente o None -> 100
+        # (comportamiento actual); config ya normaliza valores inválidos
+        # a 100.
         volume = app_cfg.get("volume")
         if volume is None:
             volume = 100
         # Reglas por contenido (RULE-001): evaluar las reglas de la app en
         # orden. Primera que matchea gana: "sound" → reproducir y return;
-        # "silence" → return. Sin match → flujo actual (urgency override o
-        # sonido del app/global). Las reglas no sobreescriben suppress-sound
-        # ni el descarte de sonido propio sin config (OWN-001) — ya retornaron.
+        # "silence" → return. Sin match → sonido del app/global. Las
+        # reglas no sobreescriben suppress-sound ni el descarte de sonido
+        # propio sin config (OWN-001) — ya retornaron.
         rules = app_cfg.get("rules")
         if rules:
             for rule in rules:
@@ -741,18 +740,6 @@ class NotifyDaemon:
                         if sound:
                             self._last_play_at[app_name] = time.monotonic()
                             player.play_choice(sound, volume=volume)
-                    return
-        # Override por nivel de urgencia: si la notificación trae urgency
-        # (0=low, 1=normal, 2=critical) y hay un sonido configurado para
-        # ese nivel, se reproduce ese en lugar del sonido del app/global.
-        # Valores fuera de 0-2 se ignoran (comportamiento actual).
-        if urgency is not None:
-            level = {0: "low", 1: "normal", 2: "critical"}.get(urgency)
-            if level is not None:
-                urgency_choice = cfg.get("urgency_sounds", {}).get(level)
-                if urgency_choice is not None:
-                    self._last_play_at[app_name] = time.monotonic()
-                    player.play_choice(urgency_choice, volume=volume)
                     return
         # La app propia "notify-sound" sigue el flujo normal: sonido
         # per-app (configurable en la GUI) o, si no tiene, el global.

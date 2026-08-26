@@ -257,11 +257,6 @@ class ConfigTests(unittest.TestCase):
             ],
             "autostart": True,
             "debounce_window": 2.0,
-            "urgency_sounds": {
-                "low": None,
-                "normal": None,
-                "critical": None,
-            },
             "apps": {
                 "warp": {
                     "enabled": True,
@@ -437,61 +432,6 @@ class ConfigTests(unittest.TestCase):
             loaded = config.load_config()
             self.assertEqual(
                 loaded["apps"]["aimp"]["volume"], 100, msg=str(value)
-            )
-
-    def test_urgency_sounds_default_when_absent(self):
-        self.write_config({"enabled": True, "sound": "message"})
-        loaded = config.load_config()
-        self.assertEqual(
-            loaded["urgency_sounds"],
-            {"low": None, "normal": None, "critical": None},
-        )
-
-    def test_urgency_sounds_valid_values_are_loaded(self):
-        self.write_config(
-            {
-                "urgency_sounds": {
-                    "low": "/tmp/low.wav",
-                    "normal": None,
-                    "critical": "/tmp/critical.wav",
-                }
-            }
-        )
-        loaded = config.load_config()
-        self.assertEqual(
-            loaded["urgency_sounds"],
-            {
-                "low": "/tmp/low.wav",
-                "normal": None,
-                "critical": "/tmp/critical.wav",
-            },
-        )
-
-    def test_urgency_sounds_invalid_keys_and_values_are_normalized(self):
-        self.write_config(
-            {
-                "urgency_sounds": {
-                    "low": "",
-                    "normal": 5,
-                    "critical": "x" * (config.MAX_PATH_LENGTH + 1),
-                    "bogus": "/tmp/bogus.wav",
-                }
-            }
-        )
-        loaded = config.load_config()
-        self.assertEqual(
-            loaded["urgency_sounds"],
-            {"low": None, "normal": None, "critical": None},
-        )
-
-    def test_urgency_sounds_non_dict_uses_default(self):
-        for value in ("x", [], 5, None):
-            self.write_config({"urgency_sounds": value})
-            loaded = config.load_config()
-            self.assertEqual(
-                loaded["urgency_sounds"],
-                {"low": None, "normal": None, "critical": None},
-                msg=str(value),
             )
 
     def test_debounce_window_default_when_absent(self):
@@ -1334,230 +1274,6 @@ class DaemonTests(ConfigTests):
             instance._reader(monitor)
         play.assert_called_once_with("message", volume=100)
 
-    def test_urgency_critical_overrides_app_and_global_sound(self):
-        critical_sound = "/tmp/notify-sound-test-critical.wav"
-        self.write_config(
-            {
-                "sound": "message",
-                "urgency_sounds": {
-                    "low": None,
-                    "normal": None,
-                    "critical": critical_sound,
-                },
-            }
-        )
-        instance, monitor = self.make_daemon(
-            notification(
-                "warp", hints=(("urgency", 2),), trailing_blank=False
-            )
-        )
-        with mock.patch.object(player, "play_choice") as play:
-            instance._reader(monitor)
-        play.assert_called_once_with(critical_sound, volume=100)
-
-    def test_urgency_low_and_normal_override_sound(self):
-        low_sound = "/tmp/notify-sound-test-low.wav"
-        normal_sound = "/tmp/notify-sound-test-normal.wav"
-        self.write_config(
-            {
-                "sound": "message",
-                "urgency_sounds": {
-                    "low": low_sound,
-                    "normal": normal_sound,
-                    "critical": None,
-                },
-            }
-        )
-        for urgency, expected in ((0, low_sound), (1, normal_sound)):
-            instance, monitor = self.make_daemon(
-                notification(
-                    "warp",
-                    hints=(("urgency", urgency),),
-                    trailing_blank=False,
-                )
-            )
-            with mock.patch.object(player, "play_choice") as play:
-                instance._reader(monitor)
-            play.assert_called_once_with(expected, volume=100)
-
-    def test_urgency_without_mapping_keeps_app_sound(self):
-        app_sound = "/tmp/notify-sound-test-I-Feel-Good.wav"
-        self.write_config(
-            {
-                "sound": "message",
-                "urgency_sounds": {
-                    "low": None,
-                    "normal": None,
-                    "critical": None,
-                },
-                "apps": {"warp": {"enabled": True, "sound": app_sound}},
-            }
-        )
-        instance, monitor = self.make_daemon(
-            notification(
-                "warp", hints=(("urgency", 2),), trailing_blank=False
-            )
-        )
-        with mock.patch.object(player, "play_choice") as play:
-            instance._reader(monitor)
-        play.assert_called_once_with(app_sound, volume=100)
-
-    def test_urgency_absent_ignores_urgency_sounds(self):
-        critical_sound = "/tmp/notify-sound-test-critical.wav"
-        self.write_config(
-            {
-                "sound": "message",
-                "urgency_sounds": {
-                    "low": None,
-                    "normal": None,
-                    "critical": critical_sound,
-                },
-            }
-        )
-        instance, monitor = self.make_daemon(
-            notification("warp", trailing_blank=False)
-        )
-        with mock.patch.object(player, "play_choice") as play:
-            instance._reader(monitor)
-        play.assert_called_once_with("message", volume=100)
-
-    def test_urgency_does_not_override_suppress_sound(self):
-        critical_sound = "/tmp/notify-sound-test-critical.wav"
-        self.write_config(
-            {
-                "sound": "message",
-                "urgency_sounds": {
-                    "low": None,
-                    "normal": None,
-                    "critical": critical_sound,
-                },
-            }
-        )
-        instance, monitor = self.make_daemon(
-            notification(
-                "warp",
-                hints=("suppress-sound", ("urgency", 2)),
-                trailing_blank=False,
-            )
-        )
-        with mock.patch.object(player, "play_choice") as play:
-            instance._reader(monitor)
-        play.assert_not_called()
-
-    def test_urgency_does_not_reactivate_disabled_app(self):
-        critical_sound = "/tmp/notify-sound-test-critical.wav"
-        self.write_config(
-            {
-                "sound": "message",
-                "urgency_sounds": {
-                    "low": None,
-                    "normal": None,
-                    "critical": critical_sound,
-                },
-                "apps": {"warp": {"enabled": False, "sound": None}},
-            }
-        )
-        instance, monitor = self.make_daemon(
-            notification(
-                "warp", hints=(("urgency", 2),), trailing_blank=False
-            )
-        )
-        with mock.patch.object(player, "play_choice") as play:
-            instance._reader(monitor)
-        play.assert_not_called()
-
-    def test_urgency_does_not_override_own_sound_without_config(self):
-        # OWN-001: sonido propio + app sin entrada en config.apps no se
-        # reproduce, incluso con urgency que activaría un override (URG-001).
-        critical_sound = "/tmp/notify-sound-test-critical.wav"
-        self.write_config(
-            {
-                "sound": "message",
-                "urgency_sounds": {
-                    "low": None,
-                    "normal": None,
-                    "critical": critical_sound,
-                },
-            }
-        )
-        instance, monitor = self.make_daemon(
-            notification(
-                "warp",
-                hints=("sound-name", ("urgency", 2)),
-                trailing_blank=False,
-            )
-        )
-        with mock.patch.object(player, "play_choice") as play:
-            instance._reader(monitor)
-        play.assert_not_called()
-
-    def test_urgency_override_applies_to_configured_app_with_own_sound(self):
-        # OWN-001 + URG-001: con la app en config.apps, el override por
-        # urgency sí aplica aunque la notificación traiga sonido propio.
-        critical_sound = "/tmp/notify-sound-test-critical.wav"
-        self.write_config(
-            {
-                "sound": "message",
-                "urgency_sounds": {
-                    "low": None,
-                    "normal": None,
-                    "critical": critical_sound,
-                },
-                "apps": {"warp": {"enabled": True}},
-            }
-        )
-        instance, monitor = self.make_daemon(
-            notification(
-                "warp",
-                hints=("sound-name", ("urgency", 2)),
-                trailing_blank=False,
-            )
-        )
-        with mock.patch.object(player, "play_choice") as play:
-            instance._reader(monitor)
-        play.assert_called_once_with(critical_sound, volume=100)
-
-    def test_urgency_override_respects_app_volume(self):
-        critical_sound = "/tmp/notify-sound-test-critical.wav"
-        self.write_config(
-            {
-                "sound": "message",
-                "urgency_sounds": {
-                    "low": None,
-                    "normal": None,
-                    "critical": critical_sound,
-                },
-                "apps": {
-                    "warp": {"enabled": True, "sound": None, "volume": 50}
-                },
-            }
-        )
-        instance, monitor = self.make_daemon(
-            notification(
-                "warp", hints=(("urgency", 2),), trailing_blank=False
-            )
-        )
-        with mock.patch.object(player, "play_choice") as play:
-            instance._reader(monitor)
-        play.assert_called_once_with(critical_sound, volume=50)
-
-    def test_maybe_play_ignores_invalid_urgency_value(self):
-        critical_sound = "/tmp/notify-sound-test-critical.wav"
-        cfg = {
-            "enabled": True,
-            "sound": "message",
-            "urgency_sounds": {
-                "low": None,
-                "normal": None,
-                "critical": critical_sound,
-            },
-            "apps": {},
-        }
-        instance = daemon.NotifyDaemon()
-        with mock.patch.object(player, "play_choice") as play:
-            instance._maybe_play("warp", set(), cfg, urgency=5)
-        play.assert_called_once_with("message", volume=100)
-
     def test_debounce_burst_plays_once(self):
         # Ráfaga de la misma app: con la ventana default (2.0 s) solo
         # suena la primera; la segunda se descarta (DEB-001).
@@ -1634,11 +1350,6 @@ class DaemonTests(ConfigTests):
             "enabled": True,
             "sound": "message",
             "debounce_window": 2.0,
-            "urgency_sounds": {
-                "low": None,
-                "normal": None,
-                "critical": None,
-            },
             "apps": {},
         }
         instance = daemon.NotifyDaemon()
@@ -1648,30 +1359,6 @@ class DaemonTests(ConfigTests):
             instance._maybe_play("chat", set(), cfg)
         play.assert_called_once_with("message", volume=100)
         self.assertEqual(instance._last_play_at["chat"], first_ts)
-
-    def test_debounce_applies_to_urgency_override(self):
-        # El debounce también aplica al override por urgencia: una ráfaga
-        # de notificaciones críticas suena una sola vez (DEB-001).
-        critical_sound = "/tmp/notify-sound-test-critical.wav"
-        self.write_config(
-            {
-                "sound": "message",
-                "urgency_sounds": {
-                    "low": None,
-                    "normal": None,
-                    "critical": critical_sound,
-                },
-            }
-        )
-        payload = notification(
-            "warp", hints=(("urgency", 2),)
-        ) + notification(
-            "warp", hints=(("urgency", 2),), trailing_blank=False
-        )
-        instance, monitor = self.make_daemon(payload)
-        with mock.patch.object(player, "play_choice") as play:
-            instance._reader(monitor)
-        play.assert_called_once_with(critical_sound, volume=100)
 
     def test_desktop_entry_hint_overrides_per_app_config_lookup(self):
         self.write_config(
@@ -2124,22 +1811,12 @@ class DaemonTests(ConfigTests):
                 "enabled": True,
                 "sound": None,
                 "debounce_window": 2.0,
-                "urgency_sounds": {
-                    "low": None,
-                    "normal": None,
-                    "critical": None,
-                },
                 "apps": {},
             },
             {
                 "enabled": True,
                 "sound": "",
                 "debounce_window": 2.0,
-                "urgency_sounds": {
-                    "low": None,
-                    "normal": None,
-                    "critical": None,
-                },
                 "apps": {},
             },
         ):
@@ -2293,14 +1970,28 @@ class DaemonTests(ConfigTests):
             instance._reader(monitor)
         play.assert_called_once_with("message", volume=50)
 
-    def test_own_notification_respects_urgency_override(self):
+    def test_own_notification_respects_urgency_rule(self):
+        # DONE-001 + RULE-001: la notificación propia con urgency=2 y una
+        # regla de urgencia configurada reproduce el sonido de la regla
+        # (URG-001 migrado: urgency se configura como regla).
         critical_sound = "/tmp/notify-sound-test-critical.wav"
         self.write_config(
             {
-                "urgency_sounds": {
-                    "low": None,
-                    "normal": None,
-                    "critical": critical_sound,
+                "apps": {
+                    "notify-sound": {
+                        "enabled": True,
+                        "rules": [
+                            {
+                                "match": {
+                                    "field": "urgency",
+                                    "op": "eq",
+                                    "value": 2,
+                                },
+                                "action": "sound",
+                                "sound": critical_sound,
+                            }
+                        ],
+                    }
                 },
             }
         )
@@ -2662,20 +2353,14 @@ class DaemonTests(ConfigTests):
             instance._reader(monitor)
         play.assert_not_called()
 
-    def test_rule_takes_priority_over_urgency_override(self):
-        # RULE-001: las reglas se evaluan antes del override por urgencia
-        # (URG-001 legacy) y tienen prioridad: si una regla matchea, se
-        # reproduce su sonido aunque urgency_sounds tenga override.
+    def test_rule_sound_plays_when_rule_matches(self):
+        # RULE-001: si una regla matchea, se reproduce su sonido aunque la
+        # notificación traiga urgency (URG-001 migrado: urgency es una
+        # regla más; no hay override legacy).
         rule_sound = "/tmp/notify-sound-test-rule.wav"
-        critical_sound = "/tmp/notify-sound-test-critical.wav"
         self.write_config(
             {
                 "sound": "message",
-                "urgency_sounds": {
-                    "low": None,
-                    "normal": None,
-                    "critical": critical_sound,
-                },
                 "apps": {
                     "warp": {
                         "enabled": True,
@@ -3658,150 +3343,6 @@ class GuiVolumeTests(unittest.TestCase):
         self.assertTrue(entry["volume_scale"].get_sensitive())
 
 
-class GuiUrgencyTests(unittest.TestCase):
-    """Tests de los controles de sonido por urgencia (URG-001)."""
-
-    LEVELS = ("low", "normal", "critical")
-
-    def _urgency_window(self, cfg):
-        from notify_sound import gui
-
-        window = _bare_window(cfg)
-        window.theme_ids = ["message", "bell"]
-        window.urgency_rows = {
-            level: {"dropdown": mock.Mock(), "test_button": mock.Mock()}
-            for level in self.LEVELS
-        }
-        return window
-
-    def test_urgency_dropdowns_initialize_from_config(self):
-        from notify_sound import gui
-
-        cfg = {
-            "urgency_sounds": {
-                "low": None,
-                "normal": "message",
-                "critical": "/tmp/critical.wav",
-            },
-            "custom_sounds": ["/tmp/critical.wav"],
-        }
-        window = self._urgency_window(cfg)
-        window._populate_urgency_dropdowns()
-        for level, entry in window.urgency_rows.items():
-            dropdown = entry["dropdown"]
-            dropdown.set_model.assert_called_once()
-            model = dropdown.set_model.call_args.args[0]
-            self.assertEqual(model.get_string(0), gui.NO_OVERRIDE)
-            self.assertEqual(model.get_string(1), "message")
-            self.assertEqual(model.get_string(2), "bell")
-            self.assertEqual(model.get_string(3), "critical.wav")
-        # Índices: low -> 0 (Sin override), normal -> 1 (message),
-        # critical -> 3 (custom sound).
-        self.assertEqual(
-            window.urgency_rows["low"]["dropdown"].set_selected.call_args.args[0], 0
-        )
-        self.assertEqual(
-            window.urgency_rows["normal"]["dropdown"].set_selected.call_args.args[0], 1
-        )
-        self.assertEqual(
-            window.urgency_rows["critical"]["dropdown"].set_selected.call_args.args[0], 3
-        )
-
-    def test_urgency_change_persists_and_saves(self):
-        from notify_sound import gui
-
-        cfg = {
-            "urgency_sounds": {"low": None, "normal": None, "critical": None},
-        }
-        window = self._urgency_window(cfg)
-        dropdown = window.urgency_rows["critical"]["dropdown"]
-        dropdown.get_selected.return_value = 1  # "message"
-        with mock.patch.object(window, "_save") as save:
-            gui.NotifyWindow._on_urgency_sound_changed(
-                window, dropdown, None, "critical"
-            )
-        save.assert_called_once_with()
-        self.assertEqual(cfg["urgency_sounds"]["critical"], "message")
-
-    def test_urgency_change_to_no_override_saves_none(self):
-        from notify_sound import gui
-
-        cfg = {
-            "urgency_sounds": {"low": None, "normal": None, "critical": "message"},
-        }
-        window = self._urgency_window(cfg)
-        dropdown = window.urgency_rows["critical"]["dropdown"]
-        dropdown.get_selected.return_value = 0  # "Sin override"
-        with mock.patch.object(window, "_save") as save:
-            gui.NotifyWindow._on_urgency_sound_changed(
-                window, dropdown, None, "critical"
-            )
-        save.assert_called_once_with()
-        self.assertIsNone(cfg["urgency_sounds"]["critical"])
-
-    def test_urgency_change_ignored_while_rebuilding(self):
-        from notify_sound import gui
-
-        cfg = {
-            "urgency_sounds": {"low": None, "normal": None, "critical": None},
-        }
-        window = self._urgency_window(cfg)
-        window._rebuilding = True
-        dropdown = window.urgency_rows["critical"]["dropdown"]
-        dropdown.get_selected.return_value = 1
-        with mock.patch.object(window, "_save") as save:
-            gui.NotifyWindow._on_urgency_sound_changed(
-                window, dropdown, None, "critical"
-            )
-        save.assert_not_called()
-        self.assertIsNone(cfg["urgency_sounds"]["critical"])
-
-    def test_urgency_test_button_plays_selected_sound(self):
-        from notify_sound import gui
-
-        cfg = {
-            "urgency_sounds": {
-                "low": None,
-                "normal": "message",
-                "critical": "/tmp/critical.wav",
-            },
-        }
-        window = _bare_window(cfg)
-        with mock.patch.object(player, "play_choice") as play:
-            window._on_test_urgency(None, "normal")
-            window._on_test_urgency(None, "critical")
-            window._on_test_urgency(None, "low")
-        play.assert_has_calls(
-            [
-                mock.call("message"),
-                mock.call("/tmp/critical.wav"),
-            ]
-        )
-        self.assertEqual(play.call_count, 2)
-
-    def test_rebuild_all_dropdowns_populates_urgency_pickers(self):
-        from notify_sound import gui
-
-        cfg = {
-            "sound": "message",
-            "urgency_sounds": {"low": None, "normal": "message", "critical": None},
-            "custom_sounds": [],
-            "apps": {},
-        }
-        window = self._urgency_window(cfg)
-        window.sound_dropdown = mock.Mock()
-        window.app_rows = {}
-        window._rebuild_all_dropdowns()
-        for level, entry in window.urgency_rows.items():
-            entry["dropdown"].set_model.assert_called_once()
-        self.assertEqual(
-            window.urgency_rows["normal"]["dropdown"].set_selected.call_args.args[0], 1
-        )
-        self.assertEqual(
-            window.urgency_rows["low"]["dropdown"].set_selected.call_args.args[0], 0
-        )
-
-
 class GuiRulesTests(unittest.TestCase):
     """Tests del diálogo de reglas por app (RULE-001)."""
 
@@ -4028,7 +3569,6 @@ class GuiDebounceTests(unittest.TestCase):
         window.theme_ids = ["message"]
         window.app_rows = {}
         window.custom_rows = {}
-        window.urgency_rows = {}
         window._rebuilding = False
         with mock.patch.object(
             config, "load_state", return_value={"apps_seen": [], "app_meta": {}}
@@ -4045,7 +3585,6 @@ class GuiDebounceTests(unittest.TestCase):
             "custom_sounds": [],
             "autostart": True,
             "debounce_window": 3.5,
-            "urgency_sounds": {"low": None, "normal": None, "critical": None},
             "apps": {},
         }
         window = self._built_window(cfg)
@@ -4061,7 +3600,6 @@ class GuiDebounceTests(unittest.TestCase):
             "sound": "message",
             "custom_sounds": [],
             "autostart": True,
-            "urgency_sounds": {"low": None, "normal": None, "critical": None},
             "apps": {},
         }
         window = self._built_window(cfg)

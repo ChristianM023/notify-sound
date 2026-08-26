@@ -12,9 +12,6 @@ from gi.repository import GLib, Gtk, Pango
 from . import config, player, sounds
 
 INHERITED = "__inherited__"
-NO_OVERRIDE = "Sin override"
-URGENCY_LEVELS = ("low", "normal", "critical")
-URGENCY_LABELS = {"low": "Baja", "normal": "Normal", "critical": "Crítica"}
 RULE_FIELDS = (
     ("body", "Cuerpo"),
     ("summary", "Resumen"),
@@ -58,7 +55,6 @@ class NotifyWindow(Gtk.ApplicationWindow):
             self.theme_ids = ["message"]
         self.app_rows = {}
         self.custom_rows = {}
-        self.urgency_rows = {}
         self._rebuilding = False
         self.sort_dropdown = None
         self._build_ui()
@@ -81,23 +77,6 @@ class NotifyWindow(Gtk.ApplicationWindow):
         if 0 <= index < len(choices):
             return choices[index][1]
         return None
-
-    def _urgency_choice_value(self, index):
-        """Mapea el índice de un picker de urgencia a un sonido.
-
-        El índice 0 es "Sin override" (None); los siguientes índices
-        corresponden a las opciones del picker global.
-        """
-        if index <= 0:
-            return None
-        return self._choice_value(index - 1)
-
-    def _urgency_choice_index(self, value):
-        """Mapea un sonido (o None) al índice de un picker de urgencia."""
-        if value is None:
-            return 0
-        index = self._choice_index(value)
-        return 0 if index is None else index + 1
 
     def _build_ui(self):
         root = Gtk.Box(
@@ -140,36 +119,6 @@ class NotifyWindow(Gtk.ApplicationWindow):
         sound_row.append(self.sound_dropdown)
         sound_row.append(test_button)
         root.append(sound_row)
-
-        urgency_header = Gtk.Label(label="Sonido por urgencia", xalign=0)
-        urgency_header.add_css_class("heading")
-        root.append(urgency_header)
-        for level in URGENCY_LEVELS:
-            urgency_row = Gtk.Box(
-                orientation=Gtk.Orientation.HORIZONTAL, spacing=10
-            )
-            urgency_label = Gtk.Label(
-                label=f"{URGENCY_LABELS[level]}:", xalign=0
-            )
-            urgency_label.set_width_chars(8)
-            urgency_dropdown = Gtk.DropDown()
-            urgency_dropdown.props.valign = Gtk.Align.CENTER
-            urgency_dropdown.connect(
-                "notify::selected", self._on_urgency_sound_changed, level
-            )
-            urgency_test_button = Gtk.Button(label="Probar")
-            urgency_test_button.props.valign = Gtk.Align.CENTER
-            urgency_test_button.connect(
-                "clicked", self._on_test_urgency, level
-            )
-            urgency_row.append(urgency_label)
-            urgency_row.append(urgency_dropdown)
-            urgency_row.append(urgency_test_button)
-            root.append(urgency_row)
-            self.urgency_rows[level] = {
-                "dropdown": urgency_dropdown,
-                "test_button": urgency_test_button,
-            }
 
         custom_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         add_button = Gtk.Button(label="Añadir sonido propio...")
@@ -432,22 +381,6 @@ class NotifyWindow(Gtk.ApplicationWindow):
             entry["dropdown"].set_selected(
                 0 if app_index is None else app_index + 1
             )
-        finally:
-            self._rebuilding = previous
-
-    def _populate_urgency_dropdowns(self):
-        previous = self._rebuilding
-        self._rebuilding = True
-        try:
-            displays = [NO_OVERRIDE] + [
-                display for display, _ in self._choices()
-            ]
-            for level, entry in self.urgency_rows.items():
-                entry["dropdown"].set_model(Gtk.StringList.new(displays))
-                current = self.cfg.get("urgency_sounds", {}).get(level)
-                entry["dropdown"].set_selected(
-                    self._urgency_choice_index(current)
-                )
         finally:
             self._rebuilding = previous
 
@@ -1067,7 +1000,6 @@ class NotifyWindow(Gtk.ApplicationWindow):
             entry["dropdown"].set_selected(
                 0 if app_index is None else app_index + 1
             )
-        self._populate_urgency_dropdowns()
         self._rebuilding = False
 
     def _refresh_custom_list(self):
@@ -1157,18 +1089,6 @@ class NotifyWindow(Gtk.ApplicationWindow):
 
     def _on_test(self, button):
         value = self._choice_value(self.sound_dropdown.get_selected())
-        if value:
-            player.play_choice(value)
-
-    def _on_urgency_sound_changed(self, dropdown, param, level):
-        if self._rebuilding:
-            return
-        value = self._urgency_choice_value(dropdown.get_selected())
-        self.cfg.setdefault("urgency_sounds", {})[level] = value
-        self._save()
-
-    def _on_test_urgency(self, button, level):
-        value = self.cfg.get("urgency_sounds", {}).get(level)
         if value:
             player.play_choice(value)
 

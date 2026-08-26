@@ -49,11 +49,9 @@ DEFAULT_CONFIG = {
     "custom_sounds": [],
     "autostart": True,
     "debounce_window": 2.0,
-    "urgency_sounds": {"low": None, "normal": None, "critical": None},
     "apps": {},
 }
 
-_URGENCY_LEVELS = ("low", "normal", "critical")
 _RULE_OPS = ("contains", "regex", "eq")
 _RULE_ACTIONS = ("sound", "silence")
 
@@ -234,28 +232,6 @@ def _normalize_app(app):
     return normalized
 
 
-def _normalize_urgency_sounds(value):
-    """Normaliza el mapeo urgency->sonido a las 3 claves canonicas.
-
-    Valores validos: None (sin override) o string acotado (0 < len <=
-    MAX_PATH_LENGTH, igual que el campo ``sound``). Claves desconocidas y
-    valores invalidos se descartan (None). Si el origen no es un dict, se
-    devuelve el default completo.
-    """
-    if not isinstance(value, dict):
-        return {level: None for level in _URGENCY_LEVELS}
-    normalized = {}
-    for level in _URGENCY_LEVELS:
-        sound = value.get(level)
-        normalized[level] = (
-            sound
-            if sound is None
-            or (isinstance(sound, str) and 0 < len(sound) <= MAX_PATH_LENGTH)
-            else None
-        )
-    return normalized
-
-
 def _find_alias_owner(cfg, alias):
     """Return the app_name whose cfg entry owns ``alias``.
 
@@ -362,7 +338,6 @@ def load_config():
         "custom_sounds": list(DEFAULT_CONFIG["custom_sounds"]),
         "autostart": DEFAULT_CONFIG["autostart"],
         "debounce_window": DEFAULT_CONFIG["debounce_window"],
-        "urgency_sounds": dict(DEFAULT_CONFIG["urgency_sounds"]),
         "apps": {},
     }
     data = {}
@@ -387,8 +362,6 @@ def load_config():
                     for p in value
                     if isinstance(p, str) and 0 < len(p) <= MAX_PATH_LENGTH
                 ]
-            elif key == "urgency_sounds":
-                cfg["urgency_sounds"] = _normalize_urgency_sounds(value)
             elif (
                 key == "debounce_window"
                 and isinstance(value, (int, float))
