@@ -15,6 +15,14 @@ INHERITED = "__inherited__"
 NO_OVERRIDE = "Sin override"
 URGENCY_LEVELS = ("low", "normal", "critical")
 URGENCY_LABELS = {"low": "Baja", "normal": "Normal", "critical": "Crítica"}
+RULE_FIELDS = (
+    ("body", "Cuerpo"),
+    ("summary", "Resumen"),
+    ("urgency", "Urgencia"),
+    ("desktop-entry", "Entrada desktop"),
+)
+RULE_OPS = (("contains", "Contiene"), ("regex", "Regex"), ("eq", "Igual"))
+RULE_ACTIONS = (("sound", "Reproducir"), ("silence", "Silenciar"))
 STATE_INTERVAL_MS = 2000
 FORMATS_HINT = (
     "Formatos: OGG, WAV y FLAC. MP3/M4A/AAC necesitan gst-launch-1.0, "
@@ -374,6 +382,13 @@ class NotifyWindow(Gtk.ApplicationWindow):
         info_button.set_tooltip_text("Información")
         info_button.props.valign = Gtk.Align.CENTER
         info_button.connect("clicked", self._on_app_info, app_name)
+        rules_button = Gtk.Button()
+        rules_button.set_icon_name("view-list-symbolic")
+        rules_button.set_tooltip_text(
+            "Editar reglas de sonido por contenido de esta aplicación"
+        )
+        rules_button.props.valign = Gtk.Align.CENTER
+        rules_button.connect("clicked", self._on_app_rules, app_name)
         app_switch = Gtk.Switch(active=switch_active)
         app_switch.props.valign = Gtk.Align.CENTER
         app_switch.connect("notify::active", self._on_app_toggled, app_name)
@@ -388,6 +403,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
         box.append(app_test_button)
         box.append(rename_button)
         box.append(info_button)
+        box.append(rules_button)
         box.append(app_switch)
         box.append(remove_button)
         row.set_child(box)
@@ -399,6 +415,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
             "volume_scale": volume_scale,
             "name_label": name_label,
             "own_sound_box": own_sound_box,
+            "rules_button": rules_button,
         }
         self._populate_app_dropdown(app_name, self.app_rows[app_name])
 
@@ -606,6 +623,271 @@ class NotifyWindow(Gtk.ApplicationWindow):
         entry = self.app_rows.pop(app_name, None)
         if entry is not None:
             self.apps_list.remove(entry["row"])
+
+    def _get_app_rules(self, app_name):
+        """Devuelve la lista de reglas de una app (RULE-001)."""
+        app_cfg = self.cfg.get("apps", {}).get(app_name)
+        if not isinstance(app_cfg, dict):
+            return []
+        rules = app_cfg.get("rules")
+        return rules if isinstance(rules, list) else []
+
+    def _set_app_rules(self, app_name, rules):
+        """Guarda la lista de reglas en la config de la app.
+
+        Una lista vacia elimina la clave ``rules`` (mismo criterio que
+        ``_normalize_app`` en config.py).
+        """
+        app_cfg = self.cfg.setdefault("apps", {}).setdefault(
+            app_name, {"enabled": True, "sound": None}
+        )
+        if rules:
+            app_cfg["rules"] = rules
+        else:
+            app_cfg.pop("rules", None)
+
+    def _normalize_rule_value(self, field, op, value):
+        """Convierte el valor de una regla a int para eq+urgency (0/1/2).
+
+        Cualquier otro caso devuelve el valor como string; un valor
+        invalido para eq+urgency se guarda como string y no matcheara
+        (el usuario lo corrige).
+        """
+        if op == "eq" and field == "urgency":
+            try:
+                parsed = int(value)
+            except (TypeError, ValueError):
+                parsed = None
+            if parsed in (0, 1, 2):
+                return parsed
+        return str(value)
+
+    def _set_app_rule(self, app_name, index, field, op, value, action, sound):
+        """Actualiza la regla en ``index`` y persiste (RULE-001)."""
+        rules = self._get_app_rules(app_name)
+        if not 0 <= index < len(rules):
+            return
+        rule = rules[index]
+        rule["match"] = {
+            "field": field,
+            "op": op,
+            "value": self._normalize_rule_value(field, op, value),
+        }
+        rule["action"] = action
+        if action == "sound":
+            rule["sound"] = sound
+        else:
+            rule.pop("sound", None)
+        self._save()
+
+    def _add_app_rule(self, app_name):
+        """Añade una regla default a la app y persiste (RULE-001).
+
+        Respeta ``config.MAX_RULES``: si la app ya tiene el maximo, no
+        se añade nada.
+        """
+        rules = self._get_app_rules(app_name)
+        if len(rules) >= config.MAX_RULES:
+            return
+        choices = self._choices()
+        default_sound = choices[0][1] if choices else None
+        rules.append(
+            {
+                "match": {"field": "body", "op": "contains", "value": ""},
+                "action": "sound",
+                "sound": default_sound,
+            }
+        )
+        self._set_app_rules(app_name, rules)
+        self._save()
+
+    def _remove_app_rule(self, app_name, index):
+        """Elimina la regla en ``index`` y persiste (RULE-001)."""
+        rules = self._get_app_rules(app_name)
+        if not 0 <= index < len(rules):
+            return
+        del rules[index]
+        self._set_app_rules(app_name, rules)
+        self._save()
+
+    def _rule_field_index(self, field):
+        for index, (value, _) in enumerate(RULE_FIELDS):
+            if value == field:
+                return index
+        return 0
+
+    def _rule_op_index(self, op):
+        for index, (value, _) in enumerate(RULE_OPS):
+            if value == op:
+                return index
+        return 0
+
+    def _rule_action_index(self, action):
+        for index, (value, _) in enumerate(RULE_ACTIONS):
+            if value == action:
+                return index
+        return 0
+
+    def _on_app_rules(self, button, app_name):
+        """Abre el diálogo de reglas por contenido de una app (RULE-001)."""
+        dialog = Gtk.Window(title=f"Reglas de {self._display_name(app_name)}")
+        dialog.set_transient_for(self)
+        dialog.set_modal(True)
+        dialog.set_default_size(680, 480)
+        root = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=10,
+            margin_top=12, margin_bottom=12, margin_start=14, margin_end=14,
+        )
+        dialog.set_child(root)
+        rules_box = Gtk.ListBox()
+        rules_box.set_selection_mode(Gtk.SelectionMode.NONE)
+        scroll = Gtk.ScrolledWindow(vexpand=True)
+        scroll.set_child(rules_box)
+        root.append(scroll)
+        actions = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=8,
+            halign=Gtk.Align.END,
+        )
+        add_button = Gtk.Button(label="Añadir regla")
+        add_button.connect(
+            "clicked", self._on_rules_add_clicked, app_name, rules_box
+        )
+        close_button = Gtk.Button(label="Cerrar")
+        close_button.connect("clicked", lambda *_: dialog.close())
+        actions.append(add_button)
+        actions.append(close_button)
+        root.append(actions)
+        self._rebuild_rules_list(app_name, rules_box)
+        dialog.present()
+
+    def _on_rules_add_clicked(self, button, app_name, rules_box):
+        self._add_app_rule(app_name)
+        self._rebuild_rules_list(app_name, rules_box)
+
+    def _rebuild_rules_list(self, app_name, rules_box):
+        for child in list(rules_box):
+            rules_box.remove(child)
+        for rule in self._get_app_rules(app_name):
+            rules_box.append(self._build_rule_row(app_name, rule, rules_box))
+
+    def _build_rule_row(self, app_name, rule, rules_box):
+        row = Gtk.ListBoxRow()
+        container = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=4,
+            margin_top=4, margin_bottom=4,
+        )
+        match = rule.get("match", {})
+        field = match.get("field", "body")
+        op = match.get("op", "contains")
+        value = match.get("value", "")
+        action = rule.get("action", "sound")
+        sound = rule.get("sound")
+        field_label = Gtk.Label(label="Campo", xalign=0)
+        field_dropdown = Gtk.DropDown(
+            model=Gtk.StringList.new([label for _, label in RULE_FIELDS])
+        )
+        field_dropdown.set_selected(self._rule_field_index(field))
+        op_label = Gtk.Label(label="Operador", xalign=0)
+        op_dropdown = Gtk.DropDown(
+            model=Gtk.StringList.new([label for _, label in RULE_OPS])
+        )
+        op_dropdown.set_selected(self._rule_op_index(op))
+        value_label = Gtk.Label(label="Valor", xalign=0)
+        value_entry = Gtk.Entry(text=str(value), width_chars=16)
+        match_line = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=6,
+        )
+        match_line.append(field_label)
+        match_line.append(field_dropdown)
+        match_line.append(op_label)
+        match_line.append(op_dropdown)
+        match_line.append(value_label)
+        match_line.append(value_entry)
+        container.append(match_line)
+        action_label = Gtk.Label(label="Acción", xalign=0)
+        action_dropdown = Gtk.DropDown(
+            model=Gtk.StringList.new([label for _, label in RULE_ACTIONS])
+        )
+        action_dropdown.set_selected(self._rule_action_index(action))
+        sound_label = Gtk.Label(label="Sonido", xalign=0)
+        sound_dropdown = Gtk.DropDown(
+            model=Gtk.StringList.new(
+                [display for display, _ in self._choices()]
+            )
+        )
+        sound_index = self._choice_index(sound)
+        sound_dropdown.set_selected(0 if sound_index is None else sound_index)
+        sound_dropdown.set_visible(action == "sound")
+        delete_button = Gtk.Button()
+        delete_button.set_icon_name("user-trash-symbolic")
+        delete_button.set_tooltip_text("Eliminar regla")
+        delete_button.props.valign = Gtk.Align.CENTER
+        action_line = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=6,
+        )
+        action_line.append(action_label)
+        action_line.append(action_dropdown)
+        action_line.append(sound_label)
+        action_line.append(sound_dropdown)
+        action_line.append(delete_button)
+        container.append(action_line)
+        widgets = {
+            "row": row,
+            "field": field_dropdown,
+            "op": op_dropdown,
+            "value": value_entry,
+            "action": action_dropdown,
+            "sound": sound_dropdown,
+        }
+        field_dropdown.connect(
+            "notify::selected",
+            lambda *_: self._on_rule_changed(app_name, widgets),
+        )
+        op_dropdown.connect(
+            "notify::selected",
+            lambda *_: self._on_rule_changed(app_name, widgets),
+        )
+        value_entry.connect(
+            "changed",
+            lambda *_: self._on_rule_changed(app_name, widgets),
+        )
+        action_dropdown.connect(
+            "notify::selected",
+            lambda *_: self._on_rule_changed(app_name, widgets),
+        )
+        sound_dropdown.connect(
+            "notify::selected",
+            lambda *_: self._on_rule_changed(app_name, widgets),
+        )
+        delete_button.connect(
+            "clicked",
+            lambda *_: self._on_rule_delete_clicked(
+                app_name, widgets, rules_box
+            ),
+        )
+        row.set_child(container)
+        return row
+
+    def _rule_row_values(self, widgets):
+        field = RULE_FIELDS[widgets["field"].get_selected()][0]
+        op = RULE_OPS[widgets["op"].get_selected()][0]
+        value = widgets["value"].get_text()
+        action = RULE_ACTIONS[widgets["action"].get_selected()][0]
+        sound = None
+        if action == "sound":
+            sound = self._choice_value(widgets["sound"].get_selected())
+        return field, op, value, action, sound
+
+    def _on_rule_changed(self, app_name, widgets):
+        index = widgets["row"].get_index()
+        field, op, value, action, sound = self._rule_row_values(widgets)
+        self._set_app_rule(app_name, index, field, op, value, action, sound)
+        widgets["sound"].set_visible(action == "sound")
+
+    def _on_rule_delete_clicked(self, app_name, widgets, rules_box):
+        index = widgets["row"].get_index()
+        self._remove_app_rule(app_name, index)
+        self._rebuild_rules_list(app_name, rules_box)
 
     def _on_app_info(self, button, app_name):
         entry_store = self.app_rows[app_name]

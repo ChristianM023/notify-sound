@@ -3802,6 +3802,214 @@ class GuiUrgencyTests(unittest.TestCase):
         )
 
 
+class GuiRulesTests(unittest.TestCase):
+    """Tests del diálogo de reglas por app (RULE-001)."""
+
+    def _rules_window(self, cfg):
+        from notify_sound import gui
+
+        window = _bare_window(cfg)
+        window.theme_ids = ["message", "bell"]
+        return window
+
+    def _row_window(self, cfg, app_name="warp"):
+        if not os.environ.get("DISPLAY") and not os.environ.get(
+            "WAYLAND_DISPLAY"
+        ):
+            self.skipTest("requires a display to instantiate GTK widgets")
+        window = _bare_window(cfg)
+        window.theme_ids = ["message"]
+        window._ensure_app_row(app_name)
+        return window
+
+    def test_get_app_rules_empty(self):
+        from notify_sound import gui
+
+        window = self._rules_window({"apps": {"warp": {"enabled": True}}})
+        self.assertEqual(window._get_app_rules("warp"), [])
+
+    def test_get_app_rules_existing(self):
+        from notify_sound import gui
+
+        rules = [
+            {
+                "match": {"field": "body", "op": "contains", "value": "x"},
+                "action": "sound",
+                "sound": "message",
+            }
+        ]
+        window = self._rules_window(
+            {"apps": {"warp": {"enabled": True, "rules": rules}}}
+        )
+        self.assertEqual(window._get_app_rules("warp"), rules)
+
+    def test_add_app_rule_adds_default(self):
+        from notify_sound import gui
+
+        window = self._rules_window({"apps": {"warp": {"enabled": True}}})
+        with mock.patch.object(window, "_save") as save:
+            window._add_app_rule("warp")
+        save.assert_called_once_with()
+        rules = window._get_app_rules("warp")
+        self.assertEqual(len(rules), 1)
+        self.assertEqual(rules[0]["match"]["field"], "body")
+        self.assertEqual(rules[0]["match"]["op"], "contains")
+        self.assertEqual(rules[0]["action"], "sound")
+        self.assertEqual(rules[0]["sound"], "message")
+
+    def test_add_app_rule_respects_max_rules(self):
+        from notify_sound import gui
+
+        rules = [
+            {
+                "match": {"field": "body", "op": "contains", "value": str(i)},
+                "action": "sound",
+                "sound": "message",
+            }
+            for i in range(config.MAX_RULES)
+        ]
+        window = self._rules_window(
+            {"apps": {"warp": {"enabled": True, "rules": rules}}}
+        )
+        with mock.patch.object(window, "_save") as save:
+            window._add_app_rule("warp")
+        save.assert_not_called()
+        self.assertEqual(len(window._get_app_rules("warp")), config.MAX_RULES)
+
+    def test_set_app_rule_updates_fields(self):
+        from notify_sound import gui
+
+        rules = [
+            {
+                "match": {"field": "body", "op": "contains", "value": "x"},
+                "action": "sound",
+                "sound": "message",
+            }
+        ]
+        window = self._rules_window(
+            {"apps": {"warp": {"enabled": True, "rules": rules}}}
+        )
+        with mock.patch.object(window, "_save") as save:
+            window._set_app_rule("warp", 0, "urgency", "eq", "2", "sound", "bell")
+        save.assert_called_once_with()
+        rule = window._get_app_rules("warp")[0]
+        self.assertEqual(rule["match"]["field"], "urgency")
+        self.assertEqual(rule["match"]["op"], "eq")
+        self.assertEqual(rule["match"]["value"], 2)
+        self.assertIsInstance(rule["match"]["value"], int)
+        self.assertEqual(rule["action"], "sound")
+        self.assertEqual(rule["sound"], "bell")
+
+    def test_set_app_rule_silence_no_sound(self):
+        from notify_sound import gui
+
+        rules = [
+            {
+                "match": {"field": "body", "op": "contains", "value": "x"},
+                "action": "sound",
+                "sound": "message",
+            }
+        ]
+        window = self._rules_window(
+            {"apps": {"warp": {"enabled": True, "rules": rules}}}
+        )
+        with mock.patch.object(window, "_save") as save:
+            window._set_app_rule("warp", 0, "body", "contains", "x", "silence", None)
+        save.assert_called_once_with()
+        rule = window._get_app_rules("warp")[0]
+        self.assertEqual(rule["action"], "silence")
+        self.assertNotIn("sound", rule)
+
+    def test_remove_app_rule(self):
+        from notify_sound import gui
+
+        rules = [
+            {
+                "match": {"field": "body", "op": "contains", "value": "a"},
+                "action": "sound",
+                "sound": "message",
+            },
+            {
+                "match": {"field": "body", "op": "contains", "value": "b"},
+                "action": "sound",
+                "sound": "bell",
+            },
+        ]
+        window = self._rules_window(
+            {"apps": {"warp": {"enabled": True, "rules": rules}}}
+        )
+        with mock.patch.object(window, "_save") as save:
+            window._remove_app_rule("warp", 0)
+        save.assert_called_once_with()
+        remaining = window._get_app_rules("warp")
+        self.assertEqual(len(remaining), 1)
+        self.assertEqual(remaining[0]["match"]["value"], "b")
+
+    def test_rule_changes_persist_via_save(self):
+        from notify_sound import gui
+
+        rules = [
+            {
+                "match": {"field": "body", "op": "contains", "value": "x"},
+                "action": "sound",
+                "sound": "message",
+            }
+        ]
+        window = self._rules_window(
+            {"apps": {"warp": {"enabled": True, "rules": rules}}}
+        )
+        with mock.patch.object(config, "save_config") as save_config:
+            window._set_app_rule("warp", 0, "body", "contains", "y", "sound", "bell")
+        save_config.assert_called_once()
+        saved = save_config.call_args.args[0]
+        self.assertEqual(saved["apps"]["warp"]["rules"][0]["match"]["value"], "y")
+        self.assertEqual(saved["apps"]["warp"]["rules"][0]["sound"], "bell")
+
+    def test_normalize_rule_value_urgency_eq_to_int(self):
+        from notify_sound import gui
+
+        window = self._rules_window({"apps": {}})
+        value = window._normalize_rule_value("urgency", "eq", "2")
+        self.assertEqual(value, 2)
+        self.assertIsInstance(value, int)
+
+    def test_normalize_rule_value_urgency_eq_invalid_keeps_string(self):
+        from notify_sound import gui
+
+        window = self._rules_window({"apps": {}})
+        self.assertEqual(window._normalize_rule_value("urgency", "eq", "5"), "5")
+        self.assertEqual(
+            window._normalize_rule_value("urgency", "eq", "abc"), "abc"
+        )
+
+    def test_normalize_rule_value_non_urgency_keeps_string(self):
+        from notify_sound import gui
+
+        window = self._rules_window({"apps": {}})
+        self.assertEqual(
+            window._normalize_rule_value("body", "contains", "x"), "x"
+        )
+
+    def test_app_row_contains_rules_button(self):
+        from notify_sound import gui
+
+        cfg = {"apps": {"warp": {"enabled": True, "sound": None}}}
+        window = self._row_window(cfg)
+        entry = window.app_rows["warp"]
+        self.assertIn("rules_button", entry)
+        self.assertIsInstance(entry["rules_button"], gui.Gtk.Button)
+
+    def test_rules_button_tooltip(self):
+        from notify_sound import gui
+
+        cfg = {"apps": {"warp": {"enabled": True, "sound": None}}}
+        window = self._row_window(cfg)
+        button = window.app_rows["warp"]["rules_button"]
+        tooltip = button.get_tooltip_text()
+        self.assertIsNotNone(tooltip)
+        self.assertIn("reglas", tooltip.lower())
+
+
 class GuiDebounceTests(unittest.TestCase):
     """Tests del control anti-ráfaga (DEB-001)."""
 
