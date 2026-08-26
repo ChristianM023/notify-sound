@@ -188,7 +188,6 @@ class ConfigTests(unittest.TestCase):
                 "enabled": None,
                 "sound": None,
                 "custom_sounds": None,
-                "no_duplicate": None,
                 "autostart": None,
                 "apps": [],
             },
@@ -202,7 +201,6 @@ class ConfigTests(unittest.TestCase):
             loaded = config.load_config()
             self.assertIsInstance(loaded["apps"], dict)
             self.assertIsInstance(loaded["enabled"], bool)
-            self.assertIsInstance(loaded["no_duplicate"], bool)
             self.assertIsInstance(loaded["autostart"], bool)
             self.assertIsInstance(loaded["custom_sounds"], list)
             self.assertIsInstance(loaded["sound"], str)
@@ -222,6 +220,15 @@ class ConfigTests(unittest.TestCase):
         loaded = config.load_config()
         self.assertEqual(loaded["sound"], legacy)
         self.assertEqual(loaded["custom_sounds"], [legacy])
+
+    def test_legacy_no_duplicate_field_is_ignored(self):
+        # OWN-001: el campo global no_duplicate ya no se usa. Un config
+        # existente que lo traiga se carga sin él, sin romper ni
+        # re-persistirlo.
+        self.write_config({"no_duplicate": False, "enabled": True})
+        loaded = config.load_config()
+        self.assertNotIn("no_duplicate", loaded)
+        self.assertTrue(loaded["enabled"])
 
     def test_normalize_app_rejects_invalid_alias_and_keeps_valid(self):
         variants = [
@@ -248,7 +255,6 @@ class ConfigTests(unittest.TestCase):
                 "/tmp/notify-sound-test-I-Feel-Good.wav",
                 "/tmp/notify-sound-test-Whistle.wav",
             ],
-            "no_duplicate": True,
             "autostart": True,
             "debounce_window": 2.0,
             "urgency_sounds": {
@@ -743,8 +749,22 @@ class DaemonTests(ConfigTests):
                 instance._reader(monitor)
             play.assert_not_called()
 
-    def test_sound_hint_is_played_when_no_duplicate_is_disabled(self):
-        self.write_config({"no_duplicate": False})
+    def test_own_sound_without_app_config_is_not_played(self):
+        # OWN-001: app con sonido propio sin entrada en config.apps no se
+        # reproduce (evita duplicar el sonido que ya envía la app).
+        instance, monitor = self.make_daemon(
+            notification("with-hint", hints=("sound-name",), trailing_blank=False)
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_not_called()
+
+    def test_own_sound_with_app_config_is_played(self):
+        # OWN-001: si el usuario configuró la app (entrada en config.apps),
+        # se respeta su elección aunque la app traiga sonido propio.
+        self.write_config(
+            {"sound": "message", "apps": {"with-hint": {"enabled": True}}}
+        )
         instance, monitor = self.make_daemon(
             notification("with-hint", hints=("sound-name",), trailing_blank=False)
         )
@@ -1073,12 +1093,13 @@ class DaemonTests(ConfigTests):
             instance._reader(monitor)
         play.assert_not_called()
 
-    def test_urgency_does_not_override_no_duplicate(self):
+    def test_urgency_does_not_override_own_sound_without_config(self):
+        # OWN-001: sonido propio + app sin entrada en config.apps no se
+        # reproduce, incluso con urgency que activaría un override (URG-001).
         critical_sound = "/tmp/notify-sound-test-critical.wav"
         self.write_config(
             {
                 "sound": "message",
-                "no_duplicate": True,
                 "urgency_sounds": {
                     "low": None,
                     "normal": None,
@@ -1096,6 +1117,32 @@ class DaemonTests(ConfigTests):
         with mock.patch.object(player, "play_choice") as play:
             instance._reader(monitor)
         play.assert_not_called()
+
+    def test_urgency_override_applies_to_configured_app_with_own_sound(self):
+        # OWN-001 + URG-001: con la app en config.apps, el override por
+        # urgency sí aplica aunque la notificación traiga sonido propio.
+        critical_sound = "/tmp/notify-sound-test-critical.wav"
+        self.write_config(
+            {
+                "sound": "message",
+                "urgency_sounds": {
+                    "low": None,
+                    "normal": None,
+                    "critical": critical_sound,
+                },
+                "apps": {"warp": {"enabled": True}},
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification(
+                "warp",
+                hints=("sound-name", ("urgency", 2)),
+                trailing_blank=False,
+            )
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with(critical_sound, volume=100)
 
     def test_urgency_override_respects_app_volume(self):
         critical_sound = "/tmp/notify-sound-test-critical.wav"
@@ -1195,9 +1242,10 @@ class DaemonTests(ConfigTests):
             instance._reader(monitor)
         play.assert_called_once_with("message", volume=100)
 
-    def test_debounce_no_duplicate_does_not_block_next(self):
-        # no_duplicate descarta antes del debounce y no actualiza el
-        # timestamp: la siguiente audible de la misma app suena (DEB-001).
+    def test_debounce_own_sound_without_config_does_not_block_next(self):
+        # El descarte de sonido propio sin config (OWN-001) ocurre antes
+        # del debounce y no actualiza el timestamp: la siguiente audible
+        # de la misma app suena (DEB-001).
         payload = notification(
             "chat", hints=("sound-name",)
         ) + notification("chat", trailing_blank=False)
@@ -1468,7 +1516,6 @@ class DaemonTests(ConfigTests):
         play.assert_called_once_with("message", volume=100)
 
     def test_suppress_sound_is_always_silent(self):
-        self.write_config({"no_duplicate": False})
         instance, monitor = self.make_daemon(
             notification(
                 "Vivaldi",
@@ -1804,7 +1851,10 @@ class DaemonTests(ConfigTests):
             instance._reader(monitor)
         play.assert_not_called()
 
-    def test_own_notification_respects_no_duplicate(self):
+    def test_own_notification_with_own_sound_without_config_is_not_played(self):
+        # OWN-001: la app propia "notify-sound" no está en config.apps por
+        # defecto; si una notificación propia trajera sound-name, no se
+        # reproduce (mismo descarte que cualquier app sin configurar).
         instance, monitor = self.make_daemon(
             notification(
                 "notify-send",
@@ -1970,7 +2020,6 @@ class ProcessRegressionTests(unittest.TestCase):
                     "enabled": True,
                     "sound": "message",
                     "custom_sounds": [],
-                    "no_duplicate": True,
                     "autostart": True,
                     "apps": {},
                 }
@@ -3000,7 +3049,6 @@ class GuiDebounceTests(unittest.TestCase):
             "enabled": True,
             "sound": "message",
             "custom_sounds": [],
-            "no_duplicate": True,
             "autostart": True,
             "debounce_window": 3.5,
             "urgency_sounds": {"low": None, "normal": None, "critical": None},
@@ -3018,7 +3066,6 @@ class GuiDebounceTests(unittest.TestCase):
             "enabled": True,
             "sound": "message",
             "custom_sounds": [],
-            "no_duplicate": True,
             "autostart": True,
             "urgency_sounds": {"low": None, "normal": None, "critical": None},
             "apps": {},

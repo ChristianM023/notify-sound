@@ -594,8 +594,8 @@ class NotifyDaemon:
     def _maybe_play(self, app_name, hints, cfg=None, urgency=None):
         # ``urgency`` (0=low, 1=normal, 2=critical) llega ya capturado por
         # el parser. La regla de override por nivel (URG-001) va después de
-        # suppress-sound, per-app disabled y no_duplicate, y antes de la
-        # elección del sonido del app/global.
+        # suppress-sound, per-app disabled y del descarte de sonido propio
+        # sin config, y antes de la elección del sonido del app/global.
         if "suppress-sound" in hints:
             return
         if cfg is None:
@@ -610,10 +610,14 @@ class NotifyDaemon:
             app_cfg = {}
         if app_cfg.get("enabled") is False:
             return
-        if ("sound-file" in hints or "sound-name" in hints) and cfg.get(
-            "no_duplicate", True
-        ):
-            return
+        if "sound-file" in hints or "sound-name" in hints:
+            # OWN-001: si la app trae sonido propio y el usuario no la
+            # configuró (no está en config.apps), no reproducir por
+            # defecto (evita duplicar). Si el usuario activó el switch en
+            # la GUI, la app tiene entrada en config.apps y se respeta su
+            # elección (enabled).
+            if app_name not in apps:
+                return
         # Debounce anti-ráfaga (DEB-001): dentro de la ventana configurada
         # solo suena una vez por app. El timestamp se actualiza solo al
         # reproducir; las notificaciones descartadas no lo mueven y las
