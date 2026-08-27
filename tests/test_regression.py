@@ -47,7 +47,9 @@ def _lines(payload):
     return payload.decode("utf-8").splitlines()
 
 
-def notification(app_name, hints=(), trailing_blank=True, body="Body"):
+def notification(
+    app_name, hints=(), trailing_blank=True, body="Body", summary="Summary"
+):
     hint_lines = "".join(_hint_entry(hint) for hint in hints)
     payload = "".join(
         [
@@ -58,7 +60,7 @@ def notification(app_name, hints=(), trailing_blank=True, body="Body"):
             f'   string "{app_name}"\n',
             "   uint32 0\n",
             '   string ""\n',
-            '   string "Summary"\n',
+            f'   string "{summary}"\n',
             f'   string "{body}"\n',
             "   array [\n",
             "   ]\n",
@@ -605,6 +607,54 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(
                 config._normalize_rules(rules), [], msg=str(value)
             )
+
+    def test_normalize_rules_starts_with_valid(self):
+        # RULE-001: regla con op starts_with y value string se guarda.
+        rules = [
+            {
+                "match": {
+                    "field": "body",
+                    "op": "starts_with",
+                    "value": "Latest",
+                },
+                "action": "sound",
+                "sound": "custom",
+            }
+        ]
+        normalized = config._normalize_rules(rules)
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["match"]["op"], "starts_with")
+        self.assertEqual(normalized[0]["match"]["value"], "Latest")
+
+    def test_normalize_rules_ends_with_valid(self):
+        # RULE-001: regla con op ends_with y value string se guarda.
+        rules = [
+            {
+                "match": {
+                    "field": "summary",
+                    "op": "ends_with",
+                    "value": "finished",
+                },
+                "action": "sound",
+                "sound": "custom",
+            }
+        ]
+        normalized = config._normalize_rules(rules)
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["match"]["op"], "ends_with")
+        self.assertEqual(normalized[0]["match"]["value"], "finished")
+
+    def test_normalize_rules_starts_with_invalid_op_discarded(self):
+        # RULE-001: op parecido pero invalido (startswith sin underscore)
+        # se descarta; solo los ops de _RULE_OPS son validos.
+        rules = [
+            {
+                "match": {"field": "body", "op": "startswith", "value": "x"},
+                "action": "sound",
+                "sound": "custom",
+            }
+        ]
+        self.assertEqual(config._normalize_rules(rules), [])
 
     def test_normalize_rules_silence_no_sound(self):
         # RULE-001: action silence no requiere sound y no lo guarda.
@@ -2244,6 +2294,167 @@ class DaemonTests(ConfigTests):
         with mock.patch.object(player, "play_choice") as play:
             instance._reader(monitor)
         play.assert_called_once_with("custom", volume=100)
+
+    def test_rule_starts_with_matches(self):
+        # RULE-001: regla con op starts_with sobre body que empieza por el
+        # valor -> matchea y reproduce el sonido de la regla.
+        self.write_config(
+            {
+                "sound": "message",
+                "apps": {
+                    "warp": {
+                        "enabled": True,
+                        "rules": [
+                            {
+                                "match": {
+                                    "field": "body",
+                                    "op": "starts_with",
+                                    "value": "Latest",
+                                },
+                                "action": "sound",
+                                "sound": "custom",
+                            }
+                        ],
+                    }
+                },
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification("warp", body="Latest news", trailing_blank=False)
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("custom", volume=100)
+
+    def test_rule_starts_with_no_match(self):
+        # RULE-001: starts_with sin match -> fallback al sonido del
+        # app/global.
+        self.write_config(
+            {
+                "sound": "message",
+                "apps": {
+                    "warp": {
+                        "enabled": True,
+                        "rules": [
+                            {
+                                "match": {
+                                    "field": "body",
+                                    "op": "starts_with",
+                                    "value": "Latest",
+                                },
+                                "action": "sound",
+                                "sound": "custom",
+                            }
+                        ],
+                    }
+                },
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification("warp", body="Wants to run", trailing_blank=False)
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("message", volume=100)
+
+    def test_rule_ends_with_matches(self):
+        # RULE-001: regla con op ends_with sobre summary que termina por
+        # el valor -> matchea y reproduce el sonido de la regla.
+        self.write_config(
+            {
+                "sound": "message",
+                "apps": {
+                    "warp": {
+                        "enabled": True,
+                        "rules": [
+                            {
+                                "match": {
+                                    "field": "summary",
+                                    "op": "ends_with",
+                                    "value": "finished",
+                                },
+                                "action": "sound",
+                                "sound": "custom",
+                            }
+                        ],
+                    }
+                },
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification(
+                "warp", summary="Build finished", trailing_blank=False
+            )
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("custom", volume=100)
+
+    def test_rule_ends_with_no_match(self):
+        # RULE-001: ends_with sin match -> fallback al sonido del
+        # app/global.
+        self.write_config(
+            {
+                "sound": "message",
+                "apps": {
+                    "warp": {
+                        "enabled": True,
+                        "rules": [
+                            {
+                                "match": {
+                                    "field": "summary",
+                                    "op": "ends_with",
+                                    "value": "finished",
+                                },
+                                "action": "sound",
+                                "sound": "custom",
+                            }
+                        ],
+                    }
+                },
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification(
+                "warp", summary="Build started", trailing_blank=False
+            )
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("message", volume=100)
+
+    def test_rule_starts_with_on_int_field_no_match(self):
+        # RULE-001: starts_with solo aplica a strings; sobre urgency (int)
+        # no matchea -> fallback al sonido del app/global.
+        self.write_config(
+            {
+                "sound": "message",
+                "apps": {
+                    "warp": {
+                        "enabled": True,
+                        "rules": [
+                            {
+                                "match": {
+                                    "field": "urgency",
+                                    "op": "starts_with",
+                                    "value": "2",
+                                },
+                                "action": "sound",
+                                "sound": "custom",
+                            }
+                        ],
+                    }
+                },
+            }
+        )
+        instance, monitor = self.make_daemon(
+            notification(
+                "warp", hints=(("urgency", 2),), trailing_blank=False
+            )
+        )
+        with mock.patch.object(player, "play_choice") as play:
+            instance._reader(monitor)
+        play.assert_called_once_with("message", volume=100)
 
     def test_rule_field_unavailable_no_match(self):
         # RULE-001: hint arbitrario no extraido por el parser (p. ej.

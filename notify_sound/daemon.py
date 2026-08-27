@@ -336,6 +336,14 @@ def _match_rule(rule, summary, body, hints, desktop_entry, urgency):
         return pattern.search(field_value) is not None
     if op == "eq":
         return field_value == value
+    if op == "starts_with":
+        if not isinstance(field_value, str) or not isinstance(value, str):
+            return False
+        return field_value.startswith(value)
+    if op == "ends_with":
+        if not isinstance(field_value, str) or not isinstance(value, str):
+            return False
+        return field_value.endswith(value)
     return False
 
 

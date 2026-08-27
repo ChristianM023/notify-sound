@@ -52,7 +52,7 @@ DEFAULT_CONFIG = {
     "apps": {},
 }
 
-_RULE_OPS = ("contains", "regex", "eq")
+_RULE_OPS = ("contains", "regex", "eq", "starts_with", "ends_with")
 _RULE_ACTIONS = ("sound", "silence")
 
 
@@ -136,7 +136,7 @@ def _normalize_rules(rules):
             continue
         if op not in _RULE_OPS:
             continue
-        if op in ("contains", "regex"):
+        if op in ("contains", "regex", "starts_with", "ends_with"):
             if not (
                 isinstance(value, str)
                 and 0 < len(value) <= MAX_PATH_LENGTH
