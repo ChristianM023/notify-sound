@@ -4063,10 +4063,94 @@ class GuiRulesTests(unittest.TestCase):
             "sound": "message",
         }
         row = window._build_rule_row("warp", rule, gui.Gtk.ListBox())
-        controllers = row.observe_controllers()
+        handle = row.widgets["handle"]
+        controllers = handle.observe_controllers()
         self.assertTrue(
             any(isinstance(c, gui.Gtk.DragSource) for c in controllers)
         )
+
+    def test_rule_row_has_no_drag_source(self):
+        """El DragSource vive en el handle, no en el row: los widgets
+        interactivos (DropDown, Entry, Button) no deben capturar el drag."""
+        from notify_sound import gui
+
+        window = self._row_window({"apps": {"warp": {"enabled": True}}})
+        rule = {
+            "match": {"field": "body", "op": "contains", "value": "x"},
+            "action": "sound",
+            "sound": "message",
+        }
+        row = window._build_rule_row("warp", rule, gui.Gtk.ListBox())
+        controllers = row.observe_controllers()
+        self.assertFalse(
+            any(isinstance(c, gui.Gtk.DragSource) for c in controllers)
+        )
+
+    def test_rule_drag_prepare_uses_parent_row_index(self):
+        """El prepare del drag empaqueta el indice del row padre del handle."""
+        from notify_sound import gui
+
+        window = self._row_window(
+            {"apps": {"warp": {"enabled": True, "rules": self._three_rules()}}}
+        )
+        rules_box = gui.Gtk.ListBox()
+        for rule in window._get_app_rules("warp"):
+            rules_box.append(window._build_rule_row("warp", rule, rules_box))
+        row = rules_box.get_row_at_index(1)
+        handle = row.widgets["handle"]
+        drag_source = next(
+            c for c in handle.observe_controllers()
+            if isinstance(c, gui.Gtk.DragSource)
+        )
+        with mock.patch.object(gui.Gdk, "ContentProvider") as provider:
+            provider.new_for_value.return_value = "provider"
+            result = window._on_rule_drag_prepare(drag_source, 0, 0)
+        self.assertEqual(result, "provider")
+        value = provider.new_for_value.call_args.args[0]
+        self.assertEqual(value.get_int(), 1)
+
+    def test_rule_drop_reorders_and_rebuilds(self):
+        """El drop reordena la regla origen al indice de la fila destino."""
+        from notify_sound import gui
+
+        window = self._row_window(
+            {"apps": {"warp": {"enabled": True, "rules": self._three_rules()}}}
+        )
+        rules_box = gui.Gtk.ListBox()
+        for rule in window._get_app_rules("warp"):
+            rules_box.append(window._build_rule_row("warp", rule, rules_box))
+        target_row = rules_box.get_row_at_index(2)
+        drop_target = next(
+            c for c in target_row.observe_controllers()
+            if isinstance(c, gui.Gtk.DropTarget)
+        )
+        with mock.patch.object(window, "_save"):
+            result = window._on_rule_drop(drop_target, 0, 0, 0, "warp", rules_box)
+        self.assertTrue(result)
+        values = [r["match"]["value"] for r in window._get_app_rules("warp")]
+        self.assertEqual(values, ["b", "c", "a"])
+
+    def test_rule_drop_same_index_returns_false(self):
+        """Soltar sobre la misma fila no reordena ni guarda."""
+        from notify_sound import gui
+
+        window = self._row_window(
+            {"apps": {"warp": {"enabled": True, "rules": self._three_rules()}}}
+        )
+        rules_box = gui.Gtk.ListBox()
+        for rule in window._get_app_rules("warp"):
+            rules_box.append(window._build_rule_row("warp", rule, rules_box))
+        target_row = rules_box.get_row_at_index(1)
+        drop_target = next(
+            c for c in target_row.observe_controllers()
+            if isinstance(c, gui.Gtk.DropTarget)
+        )
+        with mock.patch.object(window, "_save") as save:
+            result = window._on_rule_drop(drop_target, 1, 0, 0, "warp", rules_box)
+        self.assertFalse(result)
+        save.assert_not_called()
+        values = [r["match"]["value"] for r in window._get_app_rules("warp")]
+        self.assertEqual(values, ["a", "b", "c"])
 
     def test_rule_row_has_drop_target(self):
         from notify_sound import gui

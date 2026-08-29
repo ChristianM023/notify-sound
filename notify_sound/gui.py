@@ -734,11 +734,15 @@ class NotifyWindow(Gtk.ApplicationWindow):
         )
         handle = Gtk.Image(icon_name="list-drag-handle-symbolic")
         handle.props.valign = Gtk.Align.CENTER
-        handle.set_tooltip_text("Arrastrar para reordenar")
+        drag_handle = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        drag_handle.set_size_request(24, -1)
+        drag_handle.props.valign = Gtk.Align.CENTER
+        drag_handle.set_tooltip_text("Arrastrar para reordenar")
+        drag_handle.append(handle)
         row_box = Gtk.Box(
             orientation=Gtk.Orientation.HORIZONTAL, spacing=6,
         )
-        row_box.append(handle)
+        row_box.append(drag_handle)
         row_box.append(container)
         match = rule.get("match", {})
         field = match.get("field", "body")
@@ -810,6 +814,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
         container.append(action_line)
         widgets = {
             "row": row,
+            "handle": drag_handle,
             "field": field_dropdown,
             "op": op_dropdown,
             "value": value_entry,
@@ -852,7 +857,10 @@ class NotifyWindow(Gtk.ApplicationWindow):
         drag_source = Gtk.DragSource()
         drag_source.set_actions(Gdk.DragAction.MOVE)
         drag_source.connect("prepare", self._on_rule_drag_prepare)
-        row.add_controller(drag_source)
+        # El DragSource vive en el handle, no en el row: los widgets
+        # interactivos (DropDown, Entry, Button) capturan el press y
+        # bloquearian el drag si estuviera en la fila completa.
+        drag_handle.add_controller(drag_source)
         drop_target = Gtk.DropTarget.new(GObject.TYPE_INT, Gdk.DragAction.MOVE)
         drop_target.connect("drop", self._on_rule_drop, app_name, rules_box)
         row.add_controller(drop_target)
@@ -860,14 +868,22 @@ class NotifyWindow(Gtk.ApplicationWindow):
         return row
 
     def _on_rule_drag_prepare(self, source, x, y):
-        """Empaqueta el indice de la fila origen al iniciar el drag (RULE-001)."""
-        row = source.get_widget()
-        value = GLib.Value(GObject.TYPE_INT, row.get_index())
+        """Empaqueta el indice de la fila origen al iniciar el drag (RULE-001).
+
+        El DragSource vive en el handle de arrastre; se sube por la
+        jerarquia de widgets hasta la ListBoxRow para obtener el indice.
+        """
+        widget = source.get_widget()
+        while widget is not None and not isinstance(widget, Gtk.ListBoxRow):
+            widget = widget.get_parent()
+        if widget is None:
+            return None
+        value = GObject.Value(GObject.TYPE_INT, widget.get_index())
         return Gdk.ContentProvider.new_for_value(value)
 
     def _on_rule_drop(self, target, value, x, y, app_name, rules_box):
         """Reordena la regla arrastrada al indice de la fila destino (RULE-001)."""
-        if isinstance(value, GLib.Value):
+        if isinstance(value, GObject.Value):
             source_index = value.get_int()
         else:
             source_index = int(value)
