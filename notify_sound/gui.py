@@ -14,11 +14,16 @@ from . import config, player, sounds
 INHERITED = "__inherited__"
 RULE_FIELDS = (
     ("body", "Cuerpo"),
-    ("summary", "Resumen"),
+    ("summary", "Título"),
     ("urgency", "Urgencia"),
-    ("desktop-entry", "Entrada desktop"),
 )
-RULE_OPS = (("contains", "Contiene"), ("regex", "Regex"), ("eq", "Igual"))
+RULE_OPS = (
+    ("contains", "Contiene"),
+    ("regex", "Regex"),
+    ("eq", "Igual"),
+    ("starts_with", "Empieza con"),
+    ("ends_with", "Termina con"),
+)
 RULE_ACTIONS = (("sound", "Reproducir"), ("silence", "Silenciar"))
 STATE_INTERVAL_MS = 2000
 FORMATS_HINT = (

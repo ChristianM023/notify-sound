@@ -3761,6 +3761,46 @@ class GuiRulesTests(unittest.TestCase):
         self.assertIsNotNone(tooltip)
         self.assertIn("reglas", tooltip.lower())
 
+    def test_rule_field_options_include_titulo_not_resumen(self):
+        from notify_sound import gui
+
+        labels = [label for _, label in gui.RULE_FIELDS]
+        self.assertIn("Título", labels)
+        self.assertNotIn("Resumen", labels)
+        self.assertIn(("summary", "Título"), gui.RULE_FIELDS)
+
+    def test_rule_field_options_exclude_desktop_entry(self):
+        from notify_sound import gui
+
+        values = [value for value, _ in gui.RULE_FIELDS]
+        labels = [label for _, label in gui.RULE_FIELDS]
+        self.assertNotIn("desktop-entry", values)
+        self.assertNotIn("Entrada desktop", labels)
+
+    def test_rule_op_options_include_starts_with_ends_with(self):
+        from notify_sound import gui
+
+        self.assertIn(("starts_with", "Empieza con"), gui.RULE_OPS)
+        self.assertIn(("ends_with", "Termina con"), gui.RULE_OPS)
+
+    def test_rule_field_options_count(self):
+        from notify_sound import gui
+
+        self.assertEqual(len(gui.RULE_FIELDS), 3)
+        self.assertEqual(
+            [label for _, label in gui.RULE_FIELDS],
+            ["Cuerpo", "Título", "Urgencia"],
+        )
+
+    def test_rule_op_options_count(self):
+        from notify_sound import gui
+
+        self.assertEqual(len(gui.RULE_OPS), 5)
+        self.assertEqual(
+            [label for _, label in gui.RULE_OPS],
+            ["Contiene", "Regex", "Igual", "Empieza con", "Termina con"],
+        )
+
 
 class GuiDebounceTests(unittest.TestCase):
     """Tests del control anti-ráfaga (DEB-001)."""
