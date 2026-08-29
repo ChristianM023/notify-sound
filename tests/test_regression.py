@@ -3900,6 +3900,106 @@ class GuiRulesTests(unittest.TestCase):
         self.assertEqual(saved["value"], "2")
         self.assertIsInstance(saved["value"], str)
 
+    def _three_rules(self):
+        return [
+            {
+                "match": {"field": "body", "op": "contains", "value": value},
+                "action": "sound",
+                "sound": "message",
+            }
+            for value in ("a", "b", "c")
+        ]
+
+    def test_move_app_rule_moves_rule_down(self):
+        from notify_sound import gui
+
+        window = self._rules_window(
+            {"apps": {"warp": {"enabled": True, "rules": self._three_rules()}}}
+        )
+        with mock.patch.object(window, "_save"):
+            window._move_app_rule("warp", 0, 2)
+        values = [r["match"]["value"] for r in window._get_app_rules("warp")]
+        self.assertEqual(values, ["b", "c", "a"])
+
+    def test_move_app_rule_moves_rule_up(self):
+        from notify_sound import gui
+
+        window = self._rules_window(
+            {"apps": {"warp": {"enabled": True, "rules": self._three_rules()}}}
+        )
+        with mock.patch.object(window, "_save"):
+            window._move_app_rule("warp", 2, 0)
+        values = [r["match"]["value"] for r in window._get_app_rules("warp")]
+        self.assertEqual(values, ["c", "a", "b"])
+
+    def test_move_app_rule_persists_via_save(self):
+        from notify_sound import gui
+
+        window = self._rules_window(
+            {"apps": {"warp": {"enabled": True, "rules": self._three_rules()}}}
+        )
+        with mock.patch.object(config, "save_config") as save_config:
+            window._move_app_rule("warp", 0, 2)
+        save_config.assert_called_once()
+        saved = save_config.call_args.args[0]
+        values = [r["match"]["value"] for r in saved["apps"]["warp"]["rules"]]
+        self.assertEqual(values, ["b", "c", "a"])
+
+    def test_move_app_rule_same_index_does_not_save(self):
+        from notify_sound import gui
+
+        window = self._rules_window(
+            {"apps": {"warp": {"enabled": True, "rules": self._three_rules()}}}
+        )
+        with mock.patch.object(window, "_save") as save:
+            window._move_app_rule("warp", 1, 1)
+        save.assert_not_called()
+        values = [r["match"]["value"] for r in window._get_app_rules("warp")]
+        self.assertEqual(values, ["a", "b", "c"])
+
+    def test_move_app_rule_out_of_range_does_not_save(self):
+        from notify_sound import gui
+
+        window = self._rules_window(
+            {"apps": {"warp": {"enabled": True, "rules": self._three_rules()}}}
+        )
+        with mock.patch.object(window, "_save") as save:
+            window._move_app_rule("warp", 0, 5)
+            window._move_app_rule("warp", 5, 0)
+        save.assert_not_called()
+        values = [r["match"]["value"] for r in window._get_app_rules("warp")]
+        self.assertEqual(values, ["a", "b", "c"])
+
+    def test_rule_row_has_drag_source(self):
+        from notify_sound import gui
+
+        window = self._row_window({"apps": {"warp": {"enabled": True}}})
+        rule = {
+            "match": {"field": "body", "op": "contains", "value": "x"},
+            "action": "sound",
+            "sound": "message",
+        }
+        row = window._build_rule_row("warp", rule, gui.Gtk.ListBox())
+        controllers = row.observe_controllers()
+        self.assertTrue(
+            any(isinstance(c, gui.Gtk.DragSource) for c in controllers)
+        )
+
+    def test_rule_row_has_drop_target(self):
+        from notify_sound import gui
+
+        window = self._row_window({"apps": {"warp": {"enabled": True}}})
+        rule = {
+            "match": {"field": "body", "op": "contains", "value": "x"},
+            "action": "sound",
+            "sound": "message",
+        }
+        row = window._build_rule_row("warp", rule, gui.Gtk.ListBox())
+        controllers = row.observe_controllers()
+        self.assertTrue(
+            any(isinstance(c, gui.Gtk.DropTarget) for c in controllers)
+        )
+
 
 class GuiDebounceTests(unittest.TestCase):
     """Tests del control anti-ráfaga (DEB-001)."""

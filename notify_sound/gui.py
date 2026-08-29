@@ -6,8 +6,9 @@ from datetime import datetime
 import gi
 
 gi.require_version("Gtk", "4.0")
+gi.require_version("Gdk", "4.0")
 gi.require_version("Pango", "1.0")
-from gi.repository import GLib, Gtk, Pango
+from gi.repository import GObject, Gdk, GLib, Gtk, Pango
 
 from . import config, player, sounds
 
@@ -648,6 +649,23 @@ class NotifyWindow(Gtk.ApplicationWindow):
         self._set_app_rules(app_name, rules)
         self._save()
 
+    def _move_app_rule(self, app_name, source_index, target_index):
+        """Mueve la regla de ``source_index`` a ``target_index`` y persiste.
+
+        El orden importa: la primera regla que matchea gana (RULE-001).
+        Indices invalidos o un movimiento sin cambio no guardan nada.
+        """
+        rules = self._get_app_rules(app_name)
+        if not 0 <= source_index < len(rules):
+            return
+        if not 0 <= target_index < len(rules):
+            return
+        if source_index == target_index:
+            return
+        rules.insert(target_index, rules.pop(source_index))
+        self._set_app_rules(app_name, rules)
+        self._save()
+
     def _rule_field_index(self, field):
         for index, (value, _) in enumerate(RULE_FIELDS):
             if value == field:
@@ -714,6 +732,14 @@ class NotifyWindow(Gtk.ApplicationWindow):
             orientation=Gtk.Orientation.VERTICAL, spacing=4,
             margin_top=4, margin_bottom=4,
         )
+        handle = Gtk.Image(icon_name="list-drag-handle-symbolic")
+        handle.props.valign = Gtk.Align.CENTER
+        handle.set_tooltip_text("Arrastrar para reordenar")
+        row_box = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=6,
+        )
+        row_box.append(handle)
+        row_box.append(container)
         match = rule.get("match", {})
         field = match.get("field", "body")
         op = match.get("op", "contains")
@@ -818,8 +844,35 @@ class NotifyWindow(Gtk.ApplicationWindow):
                 app_name, widgets, rules_box
             ),
         )
-        row.set_child(container)
+        drag_source = Gtk.DragSource()
+        drag_source.set_actions(Gdk.DragAction.MOVE)
+        drag_source.connect("prepare", self._on_rule_drag_prepare)
+        row.add_controller(drag_source)
+        drop_target = Gtk.DropTarget.new(GObject.TYPE_INT, Gdk.DragAction.MOVE)
+        drop_target.connect("drop", self._on_rule_drop, app_name, rules_box)
+        row.add_controller(drop_target)
+        row.set_child(row_box)
         return row
+
+    def _on_rule_drag_prepare(self, source, x, y):
+        """Empaqueta el indice de la fila origen al iniciar el drag (RULE-001)."""
+        row = source.get_widget()
+        value = GLib.Value(GObject.TYPE_INT, row.get_index())
+        return Gdk.ContentProvider.new_for_value(value)
+
+    def _on_rule_drop(self, target, value, x, y, app_name, rules_box):
+        """Reordena la regla arrastrada al indice de la fila destino (RULE-001)."""
+        if isinstance(value, GLib.Value):
+            source_index = value.get_int()
+        else:
+            source_index = int(value)
+        row = target.get_widget()
+        target_index = row.get_index()
+        if source_index == target_index:
+            return False
+        self._move_app_rule(app_name, source_index, target_index)
+        self._rebuild_rules_list(app_name, rules_box)
+        return True
 
     def _rule_row_values(self, widgets):
         field = RULE_FIELDS[widgets["field"].get_selected()][0]
