@@ -3900,6 +3900,89 @@ class GuiRulesTests(unittest.TestCase):
         self.assertEqual(saved["value"], "2")
         self.assertIsInstance(saved["value"], str)
 
+    def test_op_dropdown_disabled_when_field_urgency(self):
+        from notify_sound import gui
+
+        window = self._row_window({"apps": {"warp": {"enabled": True}}})
+        rule = {
+            "match": {"field": "urgency", "op": "eq", "value": 2},
+            "action": "sound",
+            "sound": "message",
+        }
+        row = window._build_rule_row("warp", rule, gui.Gtk.ListBox())
+        widgets = row.widgets
+        self.assertFalse(widgets["op"].get_sensitive())
+
+    def test_op_dropdown_enabled_when_field_body(self):
+        from notify_sound import gui
+
+        window = self._row_window({"apps": {"warp": {"enabled": True}}})
+        rule = {
+            "match": {"field": "body", "op": "contains", "value": "x"},
+            "action": "sound",
+            "sound": "message",
+        }
+        row = window._build_rule_row("warp", rule, gui.Gtk.ListBox())
+        widgets = row.widgets
+        self.assertTrue(widgets["op"].get_sensitive())
+
+    def test_op_dropdown_forced_to_eq_when_field_urgency(self):
+        from notify_sound import gui
+
+        window = self._row_window({"apps": {"warp": {"enabled": True}}})
+        rule = {
+            "match": {"field": "urgency", "op": "contains", "value": 2},
+            "action": "sound",
+            "sound": "message",
+        }
+        row = window._build_rule_row("warp", rule, gui.Gtk.ListBox())
+        widgets = row.widgets
+        self.assertEqual(widgets["op"].get_selected(), window._rule_op_index("eq"))
+
+    def test_op_forced_to_eq_when_field_changes_to_urgency(self):
+        from notify_sound import gui
+
+        rule = {
+            "match": {"field": "body", "op": "contains", "value": "x"},
+            "action": "sound",
+            "sound": "message",
+        }
+        window = self._row_window(
+            {"apps": {"warp": {"enabled": True, "rules": [rule]}}}
+        )
+        rules_box = gui.Gtk.ListBox()
+        row = window._build_rule_row("warp", rule, rules_box)
+        rules_box.append(row)
+        widgets = row.widgets
+        with mock.patch.object(window, "_save"):
+            widgets["field"].set_selected(window._rule_field_index("urgency"))
+        self.assertFalse(widgets["op"].get_sensitive())
+        self.assertEqual(widgets["op"].get_selected(), window._rule_op_index("eq"))
+        saved = window._get_app_rules("warp")[0]["match"]
+        self.assertEqual(saved["op"], "eq")
+
+    def test_op_dropdown_restored_when_changing_from_urgency_to_body(self):
+        from notify_sound import gui
+
+        rule = {
+            "match": {"field": "urgency", "op": "eq", "value": 2},
+            "action": "sound",
+            "sound": "message",
+        }
+        window = self._row_window(
+            {"apps": {"warp": {"enabled": True, "rules": [rule]}}}
+        )
+        rules_box = gui.Gtk.ListBox()
+        row = window._build_rule_row("warp", rule, rules_box)
+        rules_box.append(row)
+        widgets = row.widgets
+        self.assertFalse(widgets["op"].get_sensitive())
+        with mock.patch.object(window, "_save"):
+            widgets["field"].set_selected(window._rule_field_index("body"))
+        self.assertTrue(widgets["op"].get_sensitive())
+        saved = window._get_app_rules("warp")[0]["match"]
+        self.assertEqual(saved["field"], "body")
+
     def _three_rules(self):
         return [
             {

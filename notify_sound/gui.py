@@ -765,6 +765,11 @@ class NotifyWindow(Gtk.ApplicationWindow):
         is_urgency = field == "urgency"
         value_entry.set_visible(not is_urgency)
         urgency_dropdown.set_visible(is_urgency)
+        if is_urgency:
+            # Urgencia solo admite "Igual" (eq): desactivar el desplegable
+            # de Operador y forzar la seleccion (RULE-001).
+            op_dropdown.set_sensitive(False)
+            op_dropdown.set_selected(self._rule_op_index("eq"))
         match_line = Gtk.Box(
             orientation=Gtk.Orientation.HORIZONTAL, spacing=6,
         )
@@ -921,6 +926,19 @@ class NotifyWindow(Gtk.ApplicationWindow):
             widgets["value"].set_visible(True)
             widgets["value"].set_text(str(prev_value))
 
+    def _sync_rule_op_widget(self, widgets, field):
+        """Sincroniza el desplegable de Operador con el Campo (RULE-001).
+
+        Para urgency el unico operador valido es "Igual" (eq): el
+        desplegable se desactiva y se fuerza la seleccion. Para el resto
+        se reactiva con las 5 opciones.
+        """
+        if field == "urgency":
+            widgets["op"].set_sensitive(False)
+            widgets["op"].set_selected(self._rule_op_index("eq"))
+        else:
+            widgets["op"].set_sensitive(True)
+
     def _on_rule_changed(self, app_name, widgets):
         index = widgets["row"].get_index()
         field, op, value, action, sound = self._rule_row_values(widgets)
@@ -930,6 +948,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
             # vuelvan a entrar en la sincronizacion.
             widgets["field_value"] = field
             self._sync_rule_value_widget(app_name, index, widgets, field)
+            self._sync_rule_op_widget(widgets, field)
             field, op, value, action, sound = self._rule_row_values(widgets)
         self._set_app_rule(app_name, index, field, op, value, action, sound)
         widgets["sound"].set_visible(action == "sound")
