@@ -3801,6 +3801,105 @@ class GuiRulesTests(unittest.TestCase):
             ["Contiene", "Regex", "Igual", "Empieza con", "Termina con"],
         )
 
+    def test_rule_value_dropdown_shown_when_field_urgency(self):
+        from notify_sound import gui
+
+        window = self._row_window({"apps": {"warp": {"enabled": True}}})
+        rule = {
+            "match": {"field": "urgency", "op": "eq", "value": 2},
+            "action": "sound",
+            "sound": "message",
+        }
+        row = window._build_rule_row("warp", rule, gui.Gtk.ListBox())
+        widgets = row.widgets
+        self.assertIsInstance(widgets["value"], gui.Gtk.Entry)
+        self.assertIsInstance(widgets["urgency"], gui.Gtk.DropDown)
+        self.assertFalse(widgets["value"].get_visible())
+        self.assertTrue(widgets["urgency"].get_visible())
+        self.assertEqual(widgets["urgency"].get_selected(), 2)
+
+    def test_rule_value_entry_shown_when_field_body(self):
+        from notify_sound import gui
+
+        window = self._row_window({"apps": {"warp": {"enabled": True}}})
+        rule = {
+            "match": {"field": "body", "op": "contains", "value": "x"},
+            "action": "sound",
+            "sound": "message",
+        }
+        row = window._build_rule_row("warp", rule, gui.Gtk.ListBox())
+        widgets = row.widgets
+        self.assertIsInstance(widgets["value"], gui.Gtk.Entry)
+        self.assertIsInstance(widgets["urgency"], gui.Gtk.DropDown)
+        self.assertTrue(widgets["value"].get_visible())
+        self.assertFalse(widgets["urgency"].get_visible())
+        self.assertEqual(widgets["value"].get_text(), "x")
+
+    def test_rule_value_dropdown_options_are_baja_normal_critica(self):
+        from notify_sound import gui
+
+        window = self._row_window({"apps": {"warp": {"enabled": True}}})
+        rule = {
+            "match": {"field": "urgency", "op": "eq", "value": 1},
+            "action": "sound",
+            "sound": "message",
+        }
+        row = window._build_rule_row("warp", rule, gui.Gtk.ListBox())
+        widgets = row.widgets
+        model = widgets["urgency"].get_model()
+        labels = [model.get_string(i) for i in range(model.get_n_items())]
+        self.assertEqual(labels, ["Baja", "Normal", "Crítica"])
+
+    def test_rule_value_switches_to_dropdown_when_field_changes_to_urgency(self):
+        from notify_sound import gui
+
+        rule = {
+            "match": {"field": "body", "op": "eq", "value": "x"},
+            "action": "sound",
+            "sound": "message",
+        }
+        window = self._row_window(
+            {"apps": {"warp": {"enabled": True, "rules": [rule]}}}
+        )
+        rules_box = gui.Gtk.ListBox()
+        row = window._build_rule_row("warp", rule, rules_box)
+        rules_box.append(row)
+        widgets = row.widgets
+        with mock.patch.object(window, "_save"):
+            widgets["field"].set_selected(window._rule_field_index("urgency"))
+        self.assertFalse(widgets["value"].get_visible())
+        self.assertTrue(widgets["urgency"].get_visible())
+        self.assertEqual(widgets["urgency"].get_selected(), 1)
+        saved = window._get_app_rules("warp")[0]["match"]
+        self.assertEqual(saved["field"], "urgency")
+        self.assertEqual(saved["value"], 1)
+        self.assertIsInstance(saved["value"], int)
+
+    def test_rule_value_int_converts_to_string_when_leaving_urgency(self):
+        from notify_sound import gui
+
+        rule = {
+            "match": {"field": "urgency", "op": "eq", "value": 2},
+            "action": "sound",
+            "sound": "message",
+        }
+        window = self._row_window(
+            {"apps": {"warp": {"enabled": True, "rules": [rule]}}}
+        )
+        rules_box = gui.Gtk.ListBox()
+        row = window._build_rule_row("warp", rule, rules_box)
+        rules_box.append(row)
+        widgets = row.widgets
+        with mock.patch.object(window, "_save"):
+            widgets["field"].set_selected(window._rule_field_index("body"))
+        self.assertTrue(widgets["value"].get_visible())
+        self.assertFalse(widgets["urgency"].get_visible())
+        self.assertEqual(widgets["value"].get_text(), "2")
+        saved = window._get_app_rules("warp")[0]["match"]
+        self.assertEqual(saved["field"], "body")
+        self.assertEqual(saved["value"], "2")
+        self.assertIsInstance(saved["value"], str)
+
 
 class GuiDebounceTests(unittest.TestCase):
     """Tests del control anti-ráfaga (DEB-001)."""

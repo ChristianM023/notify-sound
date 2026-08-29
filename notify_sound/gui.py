@@ -732,6 +732,13 @@ class NotifyWindow(Gtk.ApplicationWindow):
         op_dropdown.set_selected(self._rule_op_index(op))
         value_label = Gtk.Label(label="Valor", xalign=0)
         value_entry = Gtk.Entry(text=str(value), width_chars=16)
+        urgency_dropdown = Gtk.DropDown(
+            model=Gtk.StringList.new(["Baja", "Normal", "Crítica"])
+        )
+        urgency_dropdown.set_selected(self._urgency_index(value))
+        is_urgency = field == "urgency"
+        value_entry.set_visible(not is_urgency)
+        urgency_dropdown.set_visible(is_urgency)
         match_line = Gtk.Box(
             orientation=Gtk.Orientation.HORIZONTAL, spacing=6,
         )
@@ -741,6 +748,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
         match_line.append(op_dropdown)
         match_line.append(value_label)
         match_line.append(value_entry)
+        match_line.append(urgency_dropdown)
         container.append(match_line)
         action_label = Gtk.Label(label="Acción", xalign=0)
         action_dropdown = Gtk.DropDown(
@@ -774,9 +782,12 @@ class NotifyWindow(Gtk.ApplicationWindow):
             "field": field_dropdown,
             "op": op_dropdown,
             "value": value_entry,
+            "urgency": urgency_dropdown,
             "action": action_dropdown,
             "sound": sound_dropdown,
+            "field_value": field,
         }
+        row.widgets = widgets
         field_dropdown.connect(
             "notify::selected",
             lambda *_: self._on_rule_changed(app_name, widgets),
@@ -787,6 +798,10 @@ class NotifyWindow(Gtk.ApplicationWindow):
         )
         value_entry.connect(
             "changed",
+            lambda *_: self._on_rule_changed(app_name, widgets),
+        )
+        urgency_dropdown.connect(
+            "notify::selected",
             lambda *_: self._on_rule_changed(app_name, widgets),
         )
         action_dropdown.connect(
@@ -809,16 +824,60 @@ class NotifyWindow(Gtk.ApplicationWindow):
     def _rule_row_values(self, widgets):
         field = RULE_FIELDS[widgets["field"].get_selected()][0]
         op = RULE_OPS[widgets["op"].get_selected()][0]
-        value = widgets["value"].get_text()
+        if field == "urgency":
+            value = widgets["urgency"].get_selected()
+        else:
+            value = widgets["value"].get_text()
         action = RULE_ACTIONS[widgets["action"].get_selected()][0]
         sound = None
         if action == "sound":
             sound = self._choice_value(widgets["sound"].get_selected())
         return field, op, value, action, sound
 
+    def _urgency_index(self, value):
+        """Indice del dropdown de urgencia para un valor de regla.
+
+        Acepta int o string "0"/"1"/"2"; cualquier otro valor cae en
+        "Normal" (1) como default.
+        """
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            parsed = None
+        if parsed in (0, 1, 2):
+            return parsed
+        return 1
+
+    def _sync_rule_value_widget(self, app_name, index, widgets, field):
+        """Sincroniza el widget de Valor visible con el valor previo de la
+        regla cuando cambia el Campo (RULE-001).
+
+        urgency -> dropdown con la opcion correspondiente (default
+        "Normal"); resto -> entry con el valor como string.
+        """
+        rules = self._get_app_rules(app_name)
+        if not 0 <= index < len(rules):
+            return
+        prev_value = rules[index].get("match", {}).get("value", "")
+        if field == "urgency":
+            widgets["value"].set_visible(False)
+            widgets["urgency"].set_visible(True)
+            widgets["urgency"].set_selected(self._urgency_index(prev_value))
+        else:
+            widgets["urgency"].set_visible(False)
+            widgets["value"].set_visible(True)
+            widgets["value"].set_text(str(prev_value))
+
     def _on_rule_changed(self, app_name, widgets):
         index = widgets["row"].get_index()
         field, op, value, action, sound = self._rule_row_values(widgets)
+        if field != widgets.get("field_value"):
+            # El campo cambio: marcar el nuevo campo antes de sincronizar
+            # para que las senales anidadas (changed/notify::selected) no
+            # vuelvan a entrar en la sincronizacion.
+            widgets["field_value"] = field
+            self._sync_rule_value_widget(app_name, index, widgets, field)
+            field, op, value, action, sound = self._rule_row_values(widgets)
         self._set_app_rule(app_name, index, field, op, value, action, sound)
         widgets["sound"].set_visible(action == "sound")
 
