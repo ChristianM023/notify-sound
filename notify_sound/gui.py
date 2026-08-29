@@ -63,32 +63,8 @@ class NotifyWindow(Gtk.ApplicationWindow):
         self.custom_rows = {}
         self._rebuilding = False
         self.sort_dropdown = None
-        self._install_drop_highlight_css()
         self._build_ui()
         GLib.timeout_add(STATE_INTERVAL_MS, self._refresh_state)
-
-    def _install_drop_highlight_css(self):
-        """Drop highlight azul para el drag-and-drop de reglas (RULE-001).
-
-        GTK4/Adwaita pinta el highlight de drop en verde por defecto; la
-        GUI es predominantemente azul, así que se sobrescribe con el
-        color de selección del tema. La regla está scoped a
-        ``.rules-list`` para no afectar a otros ListBoxes (apps_list,
-        custom_box).
-        """
-        display = Gdk.Display.get_default()
-        if display is None:
-            return
-        css_provider = Gtk.CssProvider()
-        css_provider.load_from_data(b"""
-            .rules-list row:drop(active) {
-                background: alpha(@theme_selected_bg_color, 0.3);
-                outline: 1px solid @theme_selected_bg_color;
-            }
-        """)
-        Gtk.StyleContext.add_provider_for_display(
-            display, css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-        )
 
     def _choices(self):
         choices = [(sound_id, sound_id) for sound_id in self.theme_ids]
@@ -721,7 +697,6 @@ class NotifyWindow(Gtk.ApplicationWindow):
         dialog.set_child(root)
         rules_box = Gtk.ListBox()
         rules_box.set_selection_mode(Gtk.SelectionMode.NONE)
-        rules_box.add_css_class("rules-list")
         scroll = Gtk.ScrolledWindow(vexpand=True)
         scroll.set_child(rules_box)
         root.append(scroll)

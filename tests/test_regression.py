@@ -4167,34 +4167,6 @@ class GuiRulesTests(unittest.TestCase):
             any(isinstance(c, gui.Gtk.DropTarget) for c in controllers)
         )
 
-    def test_rules_listbox_has_rules_list_css_class(self):
-        """El ListBox del diálogo de reglas lleva la clase CSS "rules-list"
-        (scoping del drop highlight azul al diálogo de reglas)."""
-        from notify_sound import gui
-
-        if not os.environ.get("DISPLAY") and not os.environ.get(
-            "WAYLAND_DISPLAY"
-        ):
-            self.skipTest("requires a display to instantiate GTK widgets")
-        window = self._row_window({"apps": {"warp": {"enabled": True}}})
-        dialogs = []
-        with mock.patch.object(gui.Gtk.Window, "set_transient_for"), \
-                mock.patch.object(
-                    gui.Gtk.Window, "present",
-                    lambda self: dialogs.append(self),
-                ):
-            window._on_app_rules(None, "warp")
-        dialog = dialogs[0]
-        root = dialog.get_child()
-        scroll = next(
-            child for child in list(root)
-            if isinstance(child, gui.Gtk.ScrolledWindow)
-        )
-        rules_box = scroll.get_child()
-        while not isinstance(rules_box, gui.Gtk.ListBox):
-            rules_box = rules_box.get_child()
-        self.assertIn("rules-list", rules_box.get_css_classes())
-
 
 class GuiDebounceTests(unittest.TestCase):
     """Tests del control anti-ráfaga (DEB-001)."""
