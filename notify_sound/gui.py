@@ -249,6 +249,60 @@ class NotifyWindow(Gtk.ApplicationWindow):
         daemon_row.append(self.state_label)
         root.append(daemon_row)
 
+        # FASE1-CLOSE: sección de ayuda avanzada, colapsada por defecto
+        # para no ocupar espacio crítico. Se reconstruye con el idioma
+        # activo en cada _build_ui (los comandos no se traducen).
+        self.help_expander = Gtk.Expander(label=i18n.t("help_label"))
+        help_box = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=8,
+            margin_top=6, margin_bottom=6,
+        )
+        help_done_heading = Gtk.Label(
+            label=i18n.t("help_done_heading"), xalign=0, wrap=True
+        )
+        help_done_heading.add_css_class("heading")
+        help_done_intro = Gtk.Label(
+            label=i18n.t("help_done_intro"), xalign=0, wrap=True
+        )
+        help_done_example1 = Gtk.Label(
+            label=i18n.t("help_done_example1"), xalign=0
+        )
+        help_done_example1.add_css_class("monospace")
+        help_done_example2 = Gtk.Label(
+            label=i18n.t("help_done_example2"), xalign=0
+        )
+        help_done_example2.add_css_class("monospace")
+        help_app_heading = Gtk.Label(
+            label=i18n.t("help_app_in_list_heading"), xalign=0, wrap=True
+        )
+        help_app_heading.add_css_class("heading")
+        help_app_body = Gtk.Label(
+            label=i18n.t("help_app_in_list_body"), xalign=0, wrap=True
+        )
+        help_features_heading = Gtk.Label(
+            label=i18n.t("help_advanced_features_heading"), xalign=0, wrap=True
+        )
+        help_features_heading.add_css_class("heading")
+        help_box.append(help_done_heading)
+        help_box.append(help_done_intro)
+        help_box.append(help_done_example1)
+        help_box.append(help_done_example2)
+        help_box.append(help_app_heading)
+        help_box.append(help_app_body)
+        help_box.append(help_features_heading)
+        for feature_key in (
+            "help_feature_volume",
+            "help_feature_rules",
+            "help_feature_debounce",
+            "help_feature_own_sound",
+        ):
+            feature_label = Gtk.Label(
+                label=i18n.t(feature_key), xalign=0, wrap=True
+            )
+            help_box.append(feature_label)
+        self.help_expander.set_child(help_box)
+        root.append(self.help_expander)
+
         self._populate_apps()
         self._refresh_custom_list()
         self._rebuild_all_dropdowns()

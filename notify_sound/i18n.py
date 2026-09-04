@@ -108,6 +108,39 @@ EN = {
     "choose_sound_file": "Choose sound file",
     "audio_filter": "Audio",
     "language_label": "Language:",
+    "help_label": "Advanced help",
+    "help_done_heading": "Notify when a command finishes",
+    "help_done_intro": (
+        "The `notify-sound done` command sends a completion notification "
+        "when a long command finishes, and plays its sound even if the "
+        "daemon is not running. Tip: append it after a long command. "
+        "If you run it without a message, a default one is used."
+    ),
+    "help_done_example1": "./build-deb.sh; notify-sound done",
+    "help_done_example2": 'notify-sound done "backup listo"',
+    "help_app_in_list_heading": "Why «notify-sound» appears in the app list",
+    "help_app_in_list_body": (
+        "NotifySound pre-registers the app «notify-sound» so you can set "
+        "its sound (per-app) like any other. This is the app that plays "
+        "when you use `notify-sound done`."
+    ),
+    "help_advanced_features_heading": "Advanced features",
+    "help_feature_volume": (
+        "Per-app volume: set a different volume for each application in "
+        "the list."
+    ),
+    "help_feature_rules": (
+        "Content rules: play or silence specific notifications by body, "
+        "title or urgency level."
+    ),
+    "help_feature_debounce": (
+        "Anti-burst: repeated notifications from the same app within the "
+        "time window only play once."
+    ),
+    "help_feature_own_sound": (
+        "«Has its own sound»: apps that already play their own sound are "
+        "disabled by default so NotifySound does not duplicate them."
+    ),
 }
 
 ES = {
@@ -210,6 +243,41 @@ ES = {
     "choose_sound_file": "Elegir archivo de sonido",
     "audio_filter": "Audio",
     "language_label": "Idioma:",
+    "help_label": "Ayuda avanzada",
+    "help_done_heading": "Notificar cuando termina un comando",
+    "help_done_intro": (
+        "El comando `notify-sound done` envía una notificación de "
+        "finalización cuando un comando largo termina, y reproduce su "
+        "sonido aunque el daemon no esté corriendo. Consejo: añádelo "
+        "después de un comando largo. Si lo ejecutas sin mensaje, se "
+        "usa uno por defecto («Comando finalizado»)."
+    ),
+    "help_done_example1": "./build-deb.sh; notify-sound done",
+    "help_done_example2": 'notify-sound done "backup listo"',
+    "help_app_in_list_heading": "Por qué «notify-sound» aparece en la lista de aplicaciones",
+    "help_app_in_list_body": (
+        "NotifySound pre-registra la app «notify-sound» para que puedas "
+        "configurar su sonido (por-app) como cualquier otra. Es la app "
+        "que suena con `notify-sound done`."
+    ),
+    "help_advanced_features_heading": "Funciones avanzadas",
+    "help_feature_volume": (
+        "Volumen por app: ajusta un volumen distinto para cada "
+        "aplicación de la lista."
+    ),
+    "help_feature_rules": (
+        "Reglas por contenido: reproduce o silencia notificaciones "
+        "concretas por cuerpo, título o nivel de urgencia."
+    ),
+    "help_feature_debounce": (
+        "Anti-ráfaga: las notificaciones repetidas de la misma app "
+        "dentro de la ventana de tiempo solo suenan una vez."
+    ),
+    "help_feature_own_sound": (
+        "«Tiene sonido propio»: las apps que ya suenan por sí mismas "
+        "quedan desactivadas por defecto para que NotifySound no las "
+        "duplique."
+    ),
 }
 
 _current_language = DEFAULT_LANGUAGE

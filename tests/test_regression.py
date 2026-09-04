@@ -4485,6 +4485,94 @@ class GuiI18nTests(unittest.TestCase):
         self.assertEqual(cfg["language"], "en")
 
 
+class GuiHelpInfoTests(unittest.TestCase):
+    """Tests de la sección de ayuda avanzada (FASE1-CLOSE): acceso visible
+    desde la ventana principal y contenido traducido por catálogo (ADR 0013).
+    """
+
+    def _built_window(self, cfg):
+        from notify_sound import gui, i18n
+
+        window = gui.NotifyWindow.__new__(gui.NotifyWindow)
+        gui.Gtk.Widget.__init__(window)
+        window.cfg = cfg
+        window.theme_ids = ["message"]
+        window.app_rows = {}
+        window.custom_rows = {}
+        window._rebuilding = False
+        i18n.set_language(cfg.get("language", "en"))
+        window._build_ui()
+        return window
+
+    def _cfg(self, language):
+        return {
+            "enabled": True,
+            "sound": "message",
+            "custom_sounds": [],
+            "autostart": True,
+            "debounce_window": 2.0,
+            "language": language,
+            "apps": {},
+        }
+
+    def _empty_state(self):
+        return {"apps_seen": [], "app_meta": {}}
+
+    def _collect_label_texts(self, widget, out):
+        """Recolecta recursivamente los textos de todos los Gtk.Label bajo
+        ``widget`` (incluido él mismo si es un label)."""
+        from notify_sound import gui
+
+        if isinstance(widget, gui.Gtk.Label):
+            out.append(widget.get_text())
+        child = widget.get_first_child()
+        while child is not None:
+            self._collect_label_texts(child, out)
+            child = child.get_next_sibling()
+
+    def tearDown(self):
+        from notify_sound import i18n
+
+        i18n.set_language("en")
+
+    def test_help_access_present_after_build_english(self):
+        from notify_sound import gui
+
+        with mock.patch.object(config, "load_state", return_value=self._empty_state()):
+            window = self._built_window(self._cfg("en"))
+        self.assertIsNotNone(window.help_expander)
+        self.assertEqual(window.help_expander.get_label(), "Advanced help")
+
+    def test_help_access_present_after_build_spanish(self):
+        from notify_sound import gui
+
+        with mock.patch.object(config, "load_state", return_value=self._empty_state()):
+            window = self._built_window(self._cfg("es"))
+        self.assertIsNotNone(window.help_expander)
+        self.assertEqual(window.help_expander.get_label(), "Ayuda avanzada")
+
+    def test_help_content_includes_done_example_in_both_languages(self):
+        from notify_sound import gui
+
+        done_example = "./build-deb.sh; notify-sound done"
+        for language in ("en", "es"):
+            with mock.patch.object(
+                config, "load_state", return_value=self._empty_state()
+            ):
+                window = self._built_window(self._cfg(language))
+            labels = []
+            # El contenido vive en el child del expander; el label del
+            # propio expander es un widget interno sin siblings.
+            self._collect_label_texts(window.help_expander.get_child(), labels)
+            # El ejemplo de final de comando se muestra tal cual en ambos
+            # idiomas (los comandos no se traducen).
+            self.assertIn(done_example, labels)
+            self.assertTrue(
+                any("notify-sound done" in text for text in labels),
+                "falta el subcomando done en los textos de ayuda",
+            )
+
+
 class NotifySendTests(unittest.TestCase):
     """Tests del helper de envío D-Bus (`notify_sound/notify.py`)."""
 
