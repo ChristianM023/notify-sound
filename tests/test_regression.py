@@ -4486,8 +4486,10 @@ class GuiI18nTests(unittest.TestCase):
 
 
 class GuiHelpInfoTests(unittest.TestCase):
-    """Tests de la sección de ayuda avanzada (FASE1-CLOSE): acceso visible
-    desde la ventana principal y contenido traducido por catálogo (ADR 0013).
+    """Tests de la ayuda avanzada (FASE1-CLOSE, S5-r2): acceso en la zona
+    alta (columna 2 de General) que abre un popover superpuesto sin
+    modificar las dimensiones de la ventana; contenido íntegro y
+    traducido por catálogo (ADR 0013).
     """
 
     def _built_window(self, cfg):
@@ -4530,6 +4532,17 @@ class GuiHelpInfoTests(unittest.TestCase):
             self._collect_label_texts(child, out)
             child = child.get_next_sibling()
 
+    def _collect_scrolls(self, widget, out):
+        """Recolecta recursivamente los Gtk.ScrolledWindow bajo ``widget``."""
+        from notify_sound import gui
+
+        if isinstance(widget, gui.Gtk.ScrolledWindow):
+            out.append(widget)
+        child = widget.get_first_child()
+        while child is not None:
+            self._collect_scrolls(child, out)
+            child = child.get_next_sibling()
+
     def tearDown(self):
         from notify_sound import i18n
 
@@ -4540,16 +4553,16 @@ class GuiHelpInfoTests(unittest.TestCase):
 
         with mock.patch.object(config, "load_state", return_value=self._empty_state()):
             window = self._built_window(self._cfg("en"))
-        self.assertIsNotNone(window.help_expander)
-        self.assertEqual(window.help_expander.get_label(), "Advanced help")
+        self.assertIsNotNone(window.help_button)
+        self.assertEqual(window.help_button.get_label(), "Advanced help")
 
     def test_help_access_present_after_build_spanish(self):
         from notify_sound import gui
 
         with mock.patch.object(config, "load_state", return_value=self._empty_state()):
             window = self._built_window(self._cfg("es"))
-        self.assertIsNotNone(window.help_expander)
-        self.assertEqual(window.help_expander.get_label(), "Ayuda avanzada")
+        self.assertIsNotNone(window.help_button)
+        self.assertEqual(window.help_button.get_label(), "Ayuda avanzada")
 
     def test_help_content_includes_done_example_in_both_languages(self):
         from notify_sound import gui
@@ -4561,9 +4574,8 @@ class GuiHelpInfoTests(unittest.TestCase):
             ):
                 window = self._built_window(self._cfg(language))
             labels = []
-            # El contenido vive en el child del expander; el label del
-            # propio expander es un widget interno sin siblings.
-            self._collect_label_texts(window.help_expander.get_child(), labels)
+            # El contenido vive en el child del popover de ayuda.
+            self._collect_label_texts(window.help_popover.get_child(), labels)
             # El ejemplo de final de comando se muestra tal cual en ambos
             # idiomas (los comandos no se traducen).
             self.assertIn(done_example, labels)
@@ -4572,11 +4584,36 @@ class GuiHelpInfoTests(unittest.TestCase):
                 "falta el subcomando done en los textos de ayuda",
             )
 
+    def test_help_is_popover_not_inline_widget(self):
+        # S5-r2: la ayuda es un popover superpuesto (no un expander
+        # inline): no participa en el layout de la ventana y no está
+        # visible por defecto, por lo que abrirla no cambia dimensiones.
+        from notify_sound import gui
+
+        with mock.patch.object(config, "load_state", return_value=self._empty_state()):
+            window = self._built_window(self._cfg("en"))
+        self.assertIsInstance(window.help_popover, gui.Gtk.Popover)
+        self.assertFalse(window.help_popover.get_visible())
+        self.assertFalse(hasattr(window, "help_expander"))
+
+    def test_help_popover_content_scrolls_with_fixed_max_height(self):
+        # El contenido de ayuda es scrolleable con altura máxima fija
+        # (S5-r2): el popover no estira la ventana.
+        from notify_sound import gui
+
+        with mock.patch.object(config, "load_state", return_value=self._empty_state()):
+            window = self._built_window(self._cfg("en"))
+        scrolls = []
+        self._collect_scrolls(window.help_popover.get_child(), scrolls)
+        self.assertTrue(scrolls, "el contenido de ayuda debe ser scrolleable")
+        self.assertGreater(scrolls[0].get_max_content_height(), 0)
+
 
 class GuiVisualPolishTests(unittest.TestCase):
-    """Tests del pulido visual FASE1-CLOSE (S5): secciones con encabezado,
-    slider de volumen con valor visible, estado del daemon sobre la lista
-    de apps y convención de labels con dos puntos para pares label+control.
+    """Tests del pulido visual FASE1-CLOSE (S5-r2): secciones con
+    encabezado, General en 2 columnas, ayuda en popover, estado del daemon
+    al final de la ventana, valor de volumen como label junto al slider,
+    filas compactas y tamaños por defecto reducidos.
     """
 
     def _built_window(self, cfg):
@@ -4666,7 +4703,7 @@ class GuiVisualPolishTests(unittest.TestCase):
         self.assertIn("Sonido", labels)
         self.assertIn("Aplicaciones", labels)
 
-    def test_daemon_row_above_apps_list(self):
+    def test_daemon_row_below_apps_list(self):
         from notify_sound import gui
 
         with mock.patch.object(config, "load_state", return_value=self._empty_state()):
@@ -4676,9 +4713,9 @@ class GuiVisualPolishTests(unittest.TestCase):
         apps_index = self._direct_child_index(root, window.apps_list)
         self.assertGreaterEqual(daemon_index, 0)
         self.assertGreaterEqual(apps_index, 0)
-        self.assertLess(daemon_index, apps_index)
+        self.assertGreater(daemon_index, apps_index)
 
-    def test_volume_scale_draws_value(self):
+    def test_volume_value_shown_as_label_next_to_scale(self):
         from notify_sound import gui
 
         cfg = {"apps": {"warp": {"enabled": True, "sound": None}}}
@@ -4686,7 +4723,72 @@ class GuiVisualPolishTests(unittest.TestCase):
         window.theme_ids = ["message"]
         window._ensure_app_row("warp")
         scale = window.app_rows["warp"]["volume_scale"]
-        self.assertTrue(scale.get_draw_value())
+        # S5-r2: el valor numérico ya no se dibuja sobre el slider (eso
+        # aumentaba la altura de la fila); vive en un label junto a él.
+        self.assertFalse(scale.get_draw_value())
+        label = window.app_rows["warp"]["volume_label"]
+        self.assertIsInstance(label, gui.Gtk.Label)
+        self.assertEqual(label.get_text(), "100")
+
+    def test_volume_label_updates_on_value_change(self):
+        from notify_sound import gui
+
+        cfg = {
+            "apps": {"warp": {"enabled": True, "sound": None, "volume": 30}}
+        }
+        window = _bare_window(cfg)
+        window.theme_ids = ["message"]
+        window._ensure_app_row("warp")
+        scale = window.app_rows["warp"]["volume_scale"]
+        label = window.app_rows["warp"]["volume_label"]
+        self.assertEqual(label.get_text(), "30")
+        with mock.patch.object(config, "save_config"):
+            scale.get_adjustment().set_value(55)
+        self.assertEqual(label.get_text(), "55")
+
+    def test_general_section_uses_two_columns(self):
+        from notify_sound import gui
+
+        with mock.patch.object(config, "load_state", return_value=self._empty_state()):
+            window = self._built_window(self._cfg("en"))
+        grid = window.general_grid
+        self.assertIsInstance(grid, gui.Gtk.Grid)
+        # Columna izquierda: switches (master + autostart).
+        self.assertTrue(self._contains(grid, window.master_switch))
+        self.assertTrue(self._contains(grid, window.autostart_switch))
+        # Columna derecha: idioma + acceso a la ayuda avanzada.
+        self.assertTrue(self._contains(grid, window.language_dropdown))
+        self.assertTrue(self._contains(grid, window.help_button))
+
+    def test_add_custom_button_shares_row_with_global_sound(self):
+        from notify_sound import gui
+
+        with mock.patch.object(config, "load_state", return_value=self._empty_state()):
+            window = self._built_window(self._cfg("en"))
+        # S5-r2: "Añadir sonido propio..." vive en la misma fila que el
+        # selector de sonido global, después del botón Probar.
+        row = window.add_custom_button.get_parent()
+        self.assertIs(row, window.sound_dropdown.get_parent())
+        self.assertIs(row, window.test_button.get_parent())
+        children = []
+        child = row.get_first_child()
+        while child is not None:
+            children.append(child)
+            child = child.get_next_sibling()
+        self.assertLess(
+            children.index(window.test_button),
+            children.index(window.add_custom_button),
+        )
+
+    def test_debounce_row_is_compact(self):
+        from notify_sound import gui
+
+        with mock.patch.object(config, "load_state", return_value=self._empty_state()):
+            window = self._built_window(self._cfg("en"))
+        # S5-r2: la fila de anti-ráfaga no se expande; label + spin quedan
+        # juntos a la izquierda sin espacio muerto.
+        row = window.debounce_spin.get_parent()
+        self.assertEqual(row.get_halign(), gui.Gtk.Align.START)
 
     def test_rule_labels_use_colon_convention(self):
         from notify_sound import i18n
@@ -4705,7 +4807,7 @@ class GuiVisualPolishTests(unittest.TestCase):
                     f"{key} en {language} debe terminar en dos puntos",
                 )
 
-    def test_window_default_width_fits_app_row(self):
+    def test_window_default_size_fits_app_row(self):
         from notify_sound import gui
 
         cfg = self._cfg("en")
@@ -4724,7 +4826,12 @@ class GuiVisualPolishTests(unittest.TestCase):
         ) as win_init:
             gui.NotifyWindow.__init__(window, mock.Mock())
         kwargs = win_init.call_args.kwargs
-        self.assertGreaterEqual(kwargs["default_width"], 900)
+        # S5-r2: ancho reducido (860-880) manteniendo visible switch y
+        # papelera de la fila de app; alto en 740-820 tras compactar.
+        self.assertGreaterEqual(kwargs["default_width"], 860)
+        self.assertLessEqual(kwargs["default_width"], 880)
+        self.assertGreaterEqual(kwargs["default_height"], 740)
+        self.assertLessEqual(kwargs["default_height"], 820)
 
 
 class NotifySendTests(unittest.TestCase):

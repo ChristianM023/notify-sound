@@ -62,13 +62,15 @@ def _spawn(command):
 
 class NotifyWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
-        # FASE1-CLOSE: ancho por defecto ampliado para que la fila de app
-        # (nombre + sonido + volumen + botones + switch + papelera) quepa
-        # sin redimensionar. El alto se mantiene: al subir el estado del
-        # daemon a la zona global, la lista de apps gana espacio vertical.
+        # FASE1-CLOSE S5-r2: tamaño por defecto compacto. Alto 780: la
+        # ayuda avanzada salió de la ventana (popover), General ocupa una
+        # sola fila en 2 columnas, "Añadir sonido propio..." comparte fila
+        # con el sonido global y el valor de volumen ya no se dibuja sobre
+        # el slider. Ancho 880: la fila de app (nombre + sonido + volumen
+        # + botones + switch + papelera) cabe con margen.
         super().__init__(
             application=app, title="NotifySound",
-            default_width=920, default_height=950,
+            default_width=880, default_height=780,
         )
         self.cfg = config.load_config()
         # ADR 0013: el idioma activo se fija desde la config (default "en")
@@ -120,6 +122,18 @@ class NotifyWindow(Gtk.ApplicationWindow):
         # visual sin recurrir a frames pesados.
         root.append(self._section_header(i18n.t("section_general")))
 
+        # S5-r2: General en 2 columnas para reducir altura. Columna
+        # izquierda: switches (master + autostart). Columna derecha:
+        # selector de idioma + acceso a la ayuda avanzada (popover).
+        self.general_grid = Gtk.Grid(column_spacing=24)
+        left_col = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=10, hexpand=True,
+        )
+        right_col = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=10,
+            valign=Gtk.Align.START,
+        )
+
         master_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         master_label = Gtk.Label(
             label=i18n.t("master_label"), hexpand=True, xalign=0
@@ -130,7 +144,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
         self.master_switch.connect("notify::active", self._on_master_toggled)
         master_row.append(master_label)
         master_row.append(self.master_switch)
-        root.append(master_row)
+        left_col.append(master_row)
 
         autostart_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         autostart_label = Gtk.Label(
@@ -145,11 +159,14 @@ class NotifyWindow(Gtk.ApplicationWindow):
         )
         autostart_row.append(autostart_label)
         autostart_row.append(self.autostart_switch)
-        root.append(autostart_row)
+        left_col.append(autostart_row)
 
         # ADR 0013: selector de idioma in-GUI. Los nombres de idioma son
         # endónimos (cada idioma se nombra a sí mismo) y no se traducen.
-        language_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        language_row = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=10,
+            halign=Gtk.Align.START,
+        )
         language_label = Gtk.Label(label=i18n.t("language_label"), xalign=0)
         self.language_dropdown = Gtk.DropDown(
             model=Gtk.StringList.new(["English", "Español"])
@@ -163,40 +180,43 @@ class NotifyWindow(Gtk.ApplicationWindow):
         )
         language_row.append(language_label)
         language_row.append(self.language_dropdown)
-        root.append(language_row)
+        right_col.append(language_row)
 
-        # FASE1-CLOSE: el estado del daemon sube a la zona global para
-        # verse sin hacer scroll en la lista de aplicaciones.
-        daemon_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        self.start_button = Gtk.Button(label=i18n.t("start_daemon"))
-        self.start_button.connect("clicked", self._on_start_daemon)
-        self.stop_button = Gtk.Button(label=i18n.t("stop_daemon"))
-        self.stop_button.connect("clicked", self._on_stop_daemon)
-        self.state_label = Gtk.Label(label="", xalign=0, hexpand=True)
-        daemon_row.append(self.start_button)
-        daemon_row.append(self.stop_button)
-        daemon_row.append(self.state_label)
-        root.append(daemon_row)
+        # S5-r2: la ayuda avanzada vive en un popover superpuesto (no
+        # estira la ventana) accesible desde la zona alta, columna 2.
+        help_row = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=10,
+            halign=Gtk.Align.START,
+        )
+        self.help_button = Gtk.Button(label=i18n.t("help_label"))
+        self.help_button.props.valign = Gtk.Align.CENTER
+        self.help_button.connect("clicked", self._on_help_clicked)
+        self.help_popover = self._build_help_popover(self.help_button)
+        help_row.append(self.help_button)
+        right_col.append(help_row)
+
+        self.general_grid.attach(left_col, 0, 0, 1, 1)
+        self.general_grid.attach(right_col, 1, 0, 1, 1)
+        root.append(self.general_grid)
 
         root.append(Gtk.Separator())
         root.append(self._section_header(i18n.t("section_sound")))
 
+        # S5-r2: "Añadir sonido propio..." comparte fila con el sonido
+        # global, separado del botón Probar (una fila menos de altura).
         sound_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         sound_label = Gtk.Label(label=i18n.t("sound_label"), xalign=0)
         self.sound_dropdown = Gtk.DropDown()
         self.sound_dropdown.connect("notify::selected", self._on_sound_changed)
-        test_button = Gtk.Button(label=i18n.t("test_button"))
-        test_button.connect("clicked", self._on_test)
+        self.test_button = Gtk.Button(label=i18n.t("test_button"))
+        self.test_button.connect("clicked", self._on_test)
+        self.add_custom_button = Gtk.Button(label=i18n.t("add_custom_button"))
+        self.add_custom_button.connect("clicked", self._on_add_custom)
         sound_row.append(sound_label)
         sound_row.append(self.sound_dropdown)
-        sound_row.append(test_button)
+        sound_row.append(self.test_button)
+        sound_row.append(self.add_custom_button)
         root.append(sound_row)
-
-        custom_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        add_button = Gtk.Button(label=i18n.t("add_custom_button"))
-        add_button.connect("clicked", self._on_add_custom)
-        custom_row.append(add_button)
-        root.append(custom_row)
 
         formats_label = Gtk.Label(
             label=i18n.t("formats_hint"), xalign=0, wrap=True
@@ -215,7 +235,12 @@ class NotifyWindow(Gtk.ApplicationWindow):
         custom_scroll.set_child(self.custom_box)
         root.append(custom_scroll)
 
-        debounce_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        # S5-r2: fila compacta sin espacio muerto: label + spin juntos a
+        # la izquierda, sin expandir.
+        debounce_row = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=10,
+            halign=Gtk.Align.START,
+        )
         debounce_label = Gtk.Label(label=i18n.t("debounce_label"), xalign=0)
         debounce_adjustment = Gtk.Adjustment(
             value=float(self.cfg.get("debounce_window", 2.0)),
@@ -268,13 +293,45 @@ class NotifyWindow(Gtk.ApplicationWindow):
         scroll.set_child(self.apps_list)
         root.append(scroll)
 
-        # FASE1-CLOSE: sección de ayuda avanzada, colapsada por defecto
-        # para no ocupar espacio crítico. Se reconstruye con el idioma
-        # activo en cada _build_ui (los comandos no se traducen).
-        self.help_expander = Gtk.Expander(label=i18n.t("help_label"))
+        # S5-r2: el estado del daemon vuelve al final de la ventana,
+        # debajo de la lista de apps, en una sola fila con los botones.
+        daemon_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self.start_button = Gtk.Button(label=i18n.t("start_daemon"))
+        self.start_button.connect("clicked", self._on_start_daemon)
+        self.stop_button = Gtk.Button(label=i18n.t("stop_daemon"))
+        self.stop_button.connect("clicked", self._on_stop_daemon)
+        self.state_label = Gtk.Label(label="", xalign=0, hexpand=True)
+        daemon_row.append(self.start_button)
+        daemon_row.append(self.stop_button)
+        daemon_row.append(self.state_label)
+        root.append(daemon_row)
+
+        self._populate_apps()
+        self._refresh_custom_list()
+        self._rebuild_all_dropdowns()
+
+    def _build_help_popover(self, button):
+        """Popover de ayuda avanzada anclado a ``button`` (S5-r2).
+
+        Se superpone a la ventana sin modificar sus dimensiones. El
+        contenido es scrolleable con altura máxima fija y se reconstruye
+        con el idioma activo en cada ``_build_ui`` (los comandos no se
+        traducen).
+        """
+        popover = Gtk.Popover()
+        content = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=8,
+            margin_top=8, margin_bottom=8, margin_start=10, margin_end=10,
+        )
+        scroll = Gtk.ScrolledWindow(
+            hscrollbar_policy=Gtk.PolicyType.NEVER,
+            vscrollbar_policy=Gtk.PolicyType.AUTOMATIC,
+        )
+        scroll.set_max_content_height(420)
+        scroll.set_max_content_width(460)
+        scroll.set_propagate_natural_height(False)
         help_box = Gtk.Box(
             orientation=Gtk.Orientation.VERTICAL, spacing=8,
-            margin_top=6, margin_bottom=6,
         )
         help_done_heading = Gtk.Label(
             label=i18n.t("help_done_heading"), xalign=0, wrap=True
@@ -319,12 +376,15 @@ class NotifyWindow(Gtk.ApplicationWindow):
                 label=i18n.t(feature_key), xalign=0, wrap=True
             )
             help_box.append(feature_label)
-        self.help_expander.set_child(help_box)
-        root.append(self.help_expander)
+        scroll.set_child(help_box)
+        content.append(scroll)
+        popover.set_child(content)
+        popover.set_parent(button)
+        return popover
 
-        self._populate_apps()
-        self._refresh_custom_list()
-        self._rebuild_all_dropdowns()
+    def _on_help_clicked(self, button):
+        """Abre el popover de ayuda avanzada (S5-r2)."""
+        self.help_popover.popup()
 
     def _on_language_changed(self, dropdown, param):
         """Aplica el cambio de idioma en caliente (ADR 0013).
@@ -349,6 +409,12 @@ class NotifyWindow(Gtk.ApplicationWindow):
         sort_selection = 0
         if self.sort_dropdown is not None:
             sort_selection = self.sort_dropdown.get_selected()
+        # S5-r2: el popover de ayuda es child del botón (set_parent); se
+        # cierra y desancla antes de destruir el árbol para que el botón
+        # no se finalice con children vivos (warning de GTK).
+        if getattr(self, "help_popover", None) is not None:
+            self.help_popover.popdown()
+            self.help_popover.unparent()
         self.set_child(None)
         self.app_rows = {}
         self.custom_rows = {}
@@ -455,10 +521,15 @@ class NotifyWindow(Gtk.ApplicationWindow):
         volume_scale.props.valign = Gtk.Align.CENTER
         volume_scale.set_hexpand(False)
         volume_scale.set_size_request(120, -1)
-        # FASE1-CLOSE: el valor numérico del volumen se dibuja sobre el
-        # slider (antes solo estaba en el tooltip).
-        volume_scale.set_draw_value(True)
-        volume_scale.set_value_pos(Gtk.PositionType.TOP)
+        # S5-r2: el valor numérico del volumen vive en un label pequeño
+        # junto al slider (dibujarlo sobre el slider aumentaba la altura
+        # de la fila). Se actualiza en value-changed.
+        volume_value_label = Gtk.Label(
+            label=str(round(volume_adjustment.get_value())),
+            width_chars=3, xalign=0,
+        )
+        volume_value_label.props.valign = Gtk.Align.CENTER
+        volume_value_label.add_css_class("dim-label")
         volume_scale.connect(
             "value-changed", self._on_app_volume_changed, app_name
         )
@@ -493,6 +564,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
         box.append(name_box)
         box.append(app_sound_dropdown)
         box.append(volume_scale)
+        box.append(volume_value_label)
         box.append(app_test_button)
         box.append(rename_button)
         box.append(info_button)
@@ -506,6 +578,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
             "switch": app_switch,
             "dropdown": app_sound_dropdown,
             "volume_scale": volume_scale,
+            "volume_label": volume_value_label,
             "name_label": name_label,
             "own_sound_box": own_sound_box,
             "rules_button": rules_button,
@@ -1463,6 +1536,11 @@ class NotifyWindow(Gtk.ApplicationWindow):
         )
         entry["volume"] = round(scale.get_value())
         self._save()
+        # S5-r2: el label del valor numérico junto al slider se mantiene
+        # sincronizado con el valor actual.
+        label = self.app_rows.get(app_name, {}).get("volume_label")
+        if label is not None:
+            label.set_text(str(round(scale.get_value())))
 
     def _on_test_app(self, button, app_name):
         app_cfg = self.cfg.get("apps", {}).get(app_name, {})
