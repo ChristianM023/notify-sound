@@ -126,6 +126,18 @@
         <p>Activa/desactiva cada app y dale su propio sonido. Las apps se detectan automáticamente y se agrupan por proceso (así AIMP aparece como una sola entrada, no una por canción).</p>
       </div>
       <div class="feature">
+        <h3>Volumen por app</h3>
+        <p>Ajusta un volumen distinto (0-100 %) para cada aplicación: baja las apps ruidosas y sube las silenciosas.</p>
+      </div>
+      <div class="feature">
+        <h3>Reglas por contenido</h3>
+        <p>Reproduce o silencia notificaciones concretas por cuerpo, título o nivel de urgencia (baja, normal, crítica).</p>
+      </div>
+      <div class="feature">
+        <h3>Anti-ráfaga</h3>
+        <p>Las notificaciones repetidas de la misma app dentro de una ventana de tiempo configurable solo suenan una vez.</p>
+      </div>
+      <div class="feature">
         <h3>Alias y fusión de apps</h3>
         <p>Renombra las apps detectadas a un nombre amigable (&quot;AIMP&quot; en vez de un id de proceso). Fusiona duplicados renombrándolos al mismo alias; deshazlo desde el popover de información.</p>
       </div>
@@ -134,8 +146,16 @@
         <p>Añade tus propios OGG/WAV/FLAC (y MP3/M4A/AAC con GStreamer, ffplay, mpv o mpg123).</p>
       </div>
       <div class="feature">
+        <h3>Notificar cuando termina un comando</h3>
+        <p><code>notify-sound done</code> envía una notificación de finalización cuando termina un comando largo — y reproduce su sonido aunque el daemon no esté corriendo.</p>
+      </div>
+      <div class="feature">
         <h3>App de ajustes GTK4 sencilla</h3>
         <p>Elige sonidos, pruébalos, gestiona apps y el estado del daemon desde una ventana.</p>
+      </div>
+      <div class="feature">
+        <h3>GUI bilingüe (EN/ES)</h3>
+        <p>La app de ajustes está disponible en inglés y español, con un selector de idioma integrado.</p>
       </div>
       <div class="feature">
         <h3>Instalación por usuario</h3>
@@ -156,7 +176,7 @@
       <tbody>
         <tr><td>Tipo</td><td>Daemon independiente + GUI GTK4</td><td>Extensión de GNOME Shell</td></tr>
         <tr><td>Alcance</td><td>Rutas de GNOME, GTK y freedesktop</td><td>Notificaciones de GNOME Shell</td></tr>
-        <tr><td>Control por app</td><td>Activar/desactivar por app, sonidos por app, alias</td><td>Sonido para todas las notificaciones</td></tr>
+        <tr><td>Control por app</td><td>Activar/desactivar por app, sonidos por app, volumen por app, reglas por contenido, alias</td><td>Sonido para todas las notificaciones</td></tr>
         <tr><td>Sonidos propios</td><td>OGG/WAV/FLAC/MP3/M4A/AAC</td><td>Tema de sonidos del sistema</td></tr>
         <tr><td>Ajustes</td><td>Ventana GTK4</td><td>Preferencias de GNOME Extensions</td></tr>
         <tr><td>Instalación</td><td>.deb o script por usuario</td><td>Un clic en extensions.gnome.org</td></tr>
@@ -185,9 +205,12 @@ sudo apt-get -f install</code></pre>
 cd notify-sound
 ./install.sh</code></pre>
     <p>Uso:</p>
-    <pre><code>notify-sound            # abre la GUI de ajustes
-notify-sound --daemon   # inicia el daemon
-notify-sound --quit     # detiene el daemon</code></pre>
+    <pre><code>notify-sound               # abre la GUI de ajustes
+notify-sound --daemon      # inicia el daemon
+notify-sound --quit        # detiene el daemon
+notify-sound done [mensaje] # notifica cuando termina un comando largo</code></pre>
+    <p>Consejo: añade <code>notify-sound done</code> después de un comando largo para recibir una notificación cuando termina — suena aunque el daemon no esté corriendo:</p>
+    <pre><code>./long-build.sh; notify-sound done</code></pre>
     <p>Otras distribuciones: consulta el <a href="https://github.com/ChristianM023/notify-sound" target="_blank" rel="noopener">README</a> para requisitos y alternativas.</p>
   </div>
 </section>
@@ -199,6 +222,8 @@ notify-sound --quit     # detiene el daemon</code></pre>
     <pre><code>notify-sound --daemon
 notify-send "Prueba" "Si oyes un sonido, funciona"</code></pre>
     <p>Si instalaste con el autostart activado (el valor por defecto), el daemon ya está en ejecución y la línea <code>notify-send</code> por sí sola es suficiente.</p>
+    <p>También puedes probar la notificación de finalización de comando — suena aunque el daemon no esté corriendo:</p>
+    <pre><code>notify-sound done "Listo"</code></pre>
   </div>
 </section>
 
