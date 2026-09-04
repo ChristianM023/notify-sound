@@ -62,9 +62,13 @@ def _spawn(command):
 
 class NotifyWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
+        # FASE1-CLOSE: ancho por defecto ampliado para que la fila de app
+        # (nombre + sonido + volumen + botones + switch + papelera) quepa
+        # sin redimensionar. El alto se mantiene: al subir el estado del
+        # daemon a la zona global, la lista de apps gana espacio vertical.
         super().__init__(
             application=app, title="NotifySound",
-            default_width=720, default_height=950,
+            default_width=920, default_height=950,
         )
         self.cfg = config.load_config()
         # ADR 0013: el idioma activo se fija desde la config (default "en")
@@ -98,12 +102,23 @@ class NotifyWindow(Gtk.ApplicationWindow):
             return choices[index][1]
         return None
 
+    def _section_header(self, text):
+        """Encabezado de sección con la clase GTK estándar 'heading'."""
+        header = Gtk.Label(label=text, xalign=0, hexpand=True)
+        header.add_css_class("heading")
+        return header
+
     def _build_ui(self):
         root = Gtk.Box(
             orientation=Gtk.Orientation.VERTICAL, spacing=10,
             margin_top=12, margin_bottom=12, margin_start=14, margin_end=14,
         )
         self.set_child(root)
+
+        # FASE1-CLOSE: el bloque de configuración global se agrupa en
+        # secciones con encabezado (General / Sonido) para dar coherencia
+        # visual sin recurrir a frames pesados.
+        root.append(self._section_header(i18n.t("section_general")))
 
         master_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         master_label = Gtk.Label(
@@ -149,6 +164,22 @@ class NotifyWindow(Gtk.ApplicationWindow):
         language_row.append(language_label)
         language_row.append(self.language_dropdown)
         root.append(language_row)
+
+        # FASE1-CLOSE: el estado del daemon sube a la zona global para
+        # verse sin hacer scroll en la lista de aplicaciones.
+        daemon_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self.start_button = Gtk.Button(label=i18n.t("start_daemon"))
+        self.start_button.connect("clicked", self._on_start_daemon)
+        self.stop_button = Gtk.Button(label=i18n.t("stop_daemon"))
+        self.stop_button.connect("clicked", self._on_stop_daemon)
+        self.state_label = Gtk.Label(label="", xalign=0, hexpand=True)
+        daemon_row.append(self.start_button)
+        daemon_row.append(self.stop_button)
+        daemon_row.append(self.state_label)
+        root.append(daemon_row)
+
+        root.append(Gtk.Separator())
+        root.append(self._section_header(i18n.t("section_sound")))
 
         sound_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         sound_label = Gtk.Label(label=i18n.t("sound_label"), xalign=0)
@@ -200,8 +231,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
         debounce_row.append(self.debounce_spin)
         root.append(debounce_row)
 
-        separator = Gtk.Separator()
-        root.append(separator)
+        root.append(Gtk.Separator())
 
         apps_header_row = Gtk.Box(
             orientation=Gtk.Orientation.HORIZONTAL, spacing=10
@@ -237,17 +267,6 @@ class NotifyWindow(Gtk.ApplicationWindow):
         self.apps_list.set_selection_mode(Gtk.SelectionMode.NONE)
         scroll.set_child(self.apps_list)
         root.append(scroll)
-
-        daemon_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        self.start_button = Gtk.Button(label=i18n.t("start_daemon"))
-        self.start_button.connect("clicked", self._on_start_daemon)
-        self.stop_button = Gtk.Button(label=i18n.t("stop_daemon"))
-        self.stop_button.connect("clicked", self._on_stop_daemon)
-        self.state_label = Gtk.Label(label="", xalign=0, hexpand=True)
-        daemon_row.append(self.start_button)
-        daemon_row.append(self.stop_button)
-        daemon_row.append(self.state_label)
-        root.append(daemon_row)
 
         # FASE1-CLOSE: sección de ayuda avanzada, colapsada por defecto
         # para no ocupar espacio crítico. Se reconstruye con el idioma
@@ -436,6 +455,10 @@ class NotifyWindow(Gtk.ApplicationWindow):
         volume_scale.props.valign = Gtk.Align.CENTER
         volume_scale.set_hexpand(False)
         volume_scale.set_size_request(120, -1)
+        # FASE1-CLOSE: el valor numérico del volumen se dibuja sobre el
+        # slider (antes solo estaba en el tooltip).
+        volume_scale.set_draw_value(True)
+        volume_scale.set_value_pos(Gtk.PositionType.TOP)
         volume_scale.connect(
             "value-changed", self._on_app_volume_changed, app_name
         )

@@ -9,7 +9,13 @@ GUI (el selector de idioma de la ventana lo cambia sin reiniciar).
 DEFAULT_LANGUAGE = "en"
 SUPPORTED_LANGUAGES = ("en", "es")
 
+# Convención de labels (FASE1-CLOSE): los pares label+control llevan dos
+# puntos finales ("Global sound:", "Order:"); los títulos de sección y los
+# switches no ("General", "Applications", "Start with session").
+
 EN = {
+    "section_general": "General",
+    "section_sound": "Sound",
     "master_label": "Notification sound",
     "autostart_label": "Start with session",
     "sound_label": "Global sound:",
@@ -62,11 +68,11 @@ EN = {
     "add_rule_button": "Add rule",
     "close_button": "Close",
     "drag_handle_tooltip": "Drag to reorder",
-    "rule_field_label": "Field",
-    "rule_op_label": "Operator",
-    "rule_value_label": "Value",
-    "rule_action_label": "Action",
-    "rule_sound_label": "Sound",
+    "rule_field_label": "Field:",
+    "rule_op_label": "Operator:",
+    "rule_value_label": "Value:",
+    "rule_action_label": "Action:",
+    "rule_sound_label": "Sound:",
     "delete_rule_tooltip": "Delete rule",
     "rule_field_body": "Body",
     "rule_field_summary": "Title",
@@ -81,7 +87,7 @@ EN = {
     "urgency_low": "Low",
     "urgency_normal": "Normal",
     "urgency_critical": "Critical",
-    "synonyms_header": "Synonyms (press Restore to split):",
+    "synonyms_header": "Synonyms (press Restore to split)",
     "restore_button": "Restore",
     "reset_confirm_message": (
         "Clear the list of detected applications and their per-app "
@@ -144,6 +150,8 @@ EN = {
 }
 
 ES = {
+    "section_general": "General",
+    "section_sound": "Sonido",
     "master_label": "Sonido de notificaciones",
     "autostart_label": "Iniciar con la sesión",
     "sound_label": "Sonido global:",
@@ -196,11 +204,11 @@ ES = {
     "add_rule_button": "Añadir regla",
     "close_button": "Cerrar",
     "drag_handle_tooltip": "Arrastrar para reordenar",
-    "rule_field_label": "Campo",
-    "rule_op_label": "Operador",
-    "rule_value_label": "Valor",
-    "rule_action_label": "Acción",
-    "rule_sound_label": "Sonido",
+    "rule_field_label": "Campo:",
+    "rule_op_label": "Operador:",
+    "rule_value_label": "Valor:",
+    "rule_action_label": "Acción:",
+    "rule_sound_label": "Sonido:",
     "delete_rule_tooltip": "Eliminar regla",
     "rule_field_body": "Cuerpo",
     "rule_field_summary": "Título",
@@ -215,7 +223,7 @@ ES = {
     "urgency_low": "Baja",
     "urgency_normal": "Normal",
     "urgency_critical": "Crítica",
-    "synonyms_header": "Sinónimos (pulsa Restaurar para separar):",
+    "synonyms_header": "Sinónimos (pulsa Restaurar para separar)",
     "restore_button": "Restaurar",
     "reset_confirm_message": (
         "¿Vaciar la lista de aplicaciones detectadas y su configuración "

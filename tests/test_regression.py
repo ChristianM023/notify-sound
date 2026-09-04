@@ -4573,6 +4573,160 @@ class GuiHelpInfoTests(unittest.TestCase):
             )
 
 
+class GuiVisualPolishTests(unittest.TestCase):
+    """Tests del pulido visual FASE1-CLOSE (S5): secciones con encabezado,
+    slider de volumen con valor visible, estado del daemon sobre la lista
+    de apps y convención de labels con dos puntos para pares label+control.
+    """
+
+    def _built_window(self, cfg):
+        from notify_sound import gui, i18n
+
+        window = gui.NotifyWindow.__new__(gui.NotifyWindow)
+        gui.Gtk.Widget.__init__(window)
+        window.cfg = cfg
+        window.theme_ids = ["message"]
+        window.app_rows = {}
+        window.custom_rows = {}
+        window._rebuilding = False
+        i18n.set_language(cfg.get("language", "en"))
+        window._build_ui()
+        return window
+
+    def _cfg(self, language):
+        return {
+            "enabled": True,
+            "sound": "message",
+            "custom_sounds": [],
+            "autostart": True,
+            "debounce_window": 2.0,
+            "language": language,
+            "apps": {},
+        }
+
+    def _empty_state(self):
+        return {"apps_seen": [], "app_meta": {}}
+
+    def _collect_label_texts(self, widget, out):
+        from notify_sound import gui
+
+        if isinstance(widget, gui.Gtk.Label):
+            out.append(widget.get_text())
+        child = widget.get_first_child()
+        while child is not None:
+            self._collect_label_texts(child, out)
+            child = child.get_next_sibling()
+
+    def _contains(self, widget, target):
+        """True si ``target`` es ``widget`` o está dentro de su árbol."""
+        if widget is target:
+            return True
+        child = widget.get_first_child()
+        while child is not None:
+            if self._contains(child, target):
+                return True
+            child = child.get_next_sibling()
+        return False
+
+    def _direct_child_index(self, root, target):
+        """Índice del hijo directo de ``root`` que contiene a ``target``."""
+        child = root.get_first_child()
+        index = 0
+        while child is not None:
+            if self._contains(child, target):
+                return index
+            child = child.get_next_sibling()
+            index += 1
+        return -1
+
+    def tearDown(self):
+        from notify_sound import i18n
+
+        i18n.set_language("en")
+
+    def test_section_headers_present_english(self):
+        from notify_sound import gui
+
+        with mock.patch.object(config, "load_state", return_value=self._empty_state()):
+            window = self._built_window(self._cfg("en"))
+        labels = []
+        self._collect_label_texts(window.get_child(), labels)
+        self.assertIn("General", labels)
+        self.assertIn("Sound", labels)
+        self.assertIn("Applications", labels)
+
+    def test_section_headers_present_spanish(self):
+        from notify_sound import gui
+
+        with mock.patch.object(config, "load_state", return_value=self._empty_state()):
+            window = self._built_window(self._cfg("es"))
+        labels = []
+        self._collect_label_texts(window.get_child(), labels)
+        self.assertIn("General", labels)
+        self.assertIn("Sonido", labels)
+        self.assertIn("Aplicaciones", labels)
+
+    def test_daemon_row_above_apps_list(self):
+        from notify_sound import gui
+
+        with mock.patch.object(config, "load_state", return_value=self._empty_state()):
+            window = self._built_window(self._cfg("en"))
+        root = window.get_child()
+        daemon_index = self._direct_child_index(root, window.state_label)
+        apps_index = self._direct_child_index(root, window.apps_list)
+        self.assertGreaterEqual(daemon_index, 0)
+        self.assertGreaterEqual(apps_index, 0)
+        self.assertLess(daemon_index, apps_index)
+
+    def test_volume_scale_draws_value(self):
+        from notify_sound import gui
+
+        cfg = {"apps": {"warp": {"enabled": True, "sound": None}}}
+        window = _bare_window(cfg)
+        window.theme_ids = ["message"]
+        window._ensure_app_row("warp")
+        scale = window.app_rows["warp"]["volume_scale"]
+        self.assertTrue(scale.get_draw_value())
+
+    def test_rule_labels_use_colon_convention(self):
+        from notify_sound import i18n
+
+        for language in ("en", "es"):
+            i18n.set_language(language)
+            for key in (
+                "rule_field_label",
+                "rule_op_label",
+                "rule_value_label",
+                "rule_action_label",
+                "rule_sound_label",
+            ):
+                self.assertTrue(
+                    i18n.t(key).endswith(":"),
+                    f"{key} en {language} debe terminar en dos puntos",
+                )
+
+    def test_window_default_width_fits_app_row(self):
+        from notify_sound import gui
+
+        cfg = self._cfg("en")
+        window = gui.NotifyWindow.__new__(gui.NotifyWindow)
+        gui.Gtk.Widget.__init__(window)
+        with mock.patch.object(config, "load_config", return_value=cfg), mock.patch.object(
+            sounds, "list_sounds", return_value={"message": "/x"}
+        ), mock.patch.object(
+            config, "load_state", return_value=self._empty_state()
+        ), mock.patch.object(
+            config, "autostart_enabled", return_value=False
+        ), mock.patch.object(
+            GLib, "timeout_add"
+        ), mock.patch.object(
+            gui.Gtk.ApplicationWindow, "__init__", return_value=None
+        ) as win_init:
+            gui.NotifyWindow.__init__(window, mock.Mock())
+        kwargs = win_init.call_args.kwargs
+        self.assertGreaterEqual(kwargs["default_width"], 900)
+
+
 class NotifySendTests(unittest.TestCase):
     """Tests del helper de envío D-Bus (`notify_sound/notify.py`)."""
 
