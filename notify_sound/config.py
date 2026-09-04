@@ -49,6 +49,7 @@ DEFAULT_CONFIG = {
     "custom_sounds": [],
     "autostart": True,
     "debounce_window": 2.0,
+    "language": "en",
     "apps": {},
 }
 
@@ -338,6 +339,7 @@ def load_config():
         "custom_sounds": list(DEFAULT_CONFIG["custom_sounds"]),
         "autostart": DEFAULT_CONFIG["autostart"],
         "debounce_window": DEFAULT_CONFIG["debounce_window"],
+        "language": DEFAULT_CONFIG["language"],
         "apps": {},
     }
     data = {}
@@ -369,6 +371,10 @@ def load_config():
                 and value >= 0
             ):
                 cfg["debounce_window"] = float(value)
+            elif key == "language" and value in ("en", "es"):
+                # ADR 0013: idioma de la GUI; cualquier otro valor cae en
+                # el default fijo "en".
+                cfg["language"] = value
             elif key in ("enabled", "autostart") and isinstance(
                 value, bool
             ):

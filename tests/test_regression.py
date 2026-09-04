@@ -1,3 +1,4 @@
+import contextlib
 import io
 import json
 import os
@@ -116,6 +117,23 @@ def _bare_window(cfg):
     window.apps_list = mock.Mock()
     window._rebuilding = False
     return window
+
+
+@contextlib.contextmanager
+def _spanish():
+    """Fija el idioma activo de i18n a español y lo restaura al salir.
+
+    Los tests que asertan microcopy en español (la variante ES del
+    catálogo, ADR 0013) lo usan para no depender del default inglés.
+    """
+    from notify_sound import i18n
+
+    previous = i18n.get_language()
+    i18n.set_language("es")
+    try:
+        yield
+    finally:
+        i18n.set_language(previous)
 
 
 class FakeLoop:
@@ -259,6 +277,7 @@ class ConfigTests(unittest.TestCase):
             ],
             "autostart": True,
             "debounce_window": 2.0,
+            "language": "en",
             "apps": {
                 "warp": {
                     "enabled": True,
@@ -458,6 +477,32 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(
                 loaded["debounce_window"], 2.0, msg=str(value)
             )
+
+    def test_language_default_is_en_when_absent(self):
+        # ADR 0013: el idioma por defecto es fijo y predecible (inglés),
+        # sin depender del entorno del sistema.
+        self.write_config({"enabled": True, "sound": "message"})
+        loaded = config.load_config()
+        self.assertEqual(loaded["language"], "en")
+
+    def test_language_valid_es_is_loaded(self):
+        self.write_config({"language": "es"})
+        loaded = config.load_config()
+        self.assertEqual(loaded["language"], "es")
+
+    def test_language_invalid_values_fall_back_to_en(self):
+        invalid = ["fr", "EN", "", None, 1, True, [], {}]
+        for value in invalid:
+            self.write_config({"language": value})
+            loaded = config.load_config()
+            self.assertEqual(loaded["language"], "en", msg=str(value))
+
+    def test_language_round_trips_through_save(self):
+        cfg = config.load_config()
+        cfg["language"] = "es"
+        config.save_config(cfg)
+        loaded = config.load_config()
+        self.assertEqual(loaded["language"], "es")
 
     def test_json_files_are_private_and_state_is_bounded(self):
         config.save_config(config.DEFAULT_CONFIG)
@@ -834,6 +879,61 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(len(rules), 1)
         self.assertEqual(rules[0]["match"]["value"], "esperando permiso")
         self.assertEqual(rules[0]["sound"], "/tmp/rule.wav")
+
+
+class I18nTests(unittest.TestCase):
+    """Tests del catálogo de traducciones ES/EN (ADR 0013)."""
+
+    def tearDown(self):
+        from notify_sound import i18n
+
+        i18n.set_language("en")
+
+    def test_default_language_is_en(self):
+        from notify_sound import i18n
+
+        self.assertEqual(i18n.get_language(), "en")
+
+    def test_catalog_key_parity_between_en_and_es(self):
+        from notify_sound import i18n
+
+        self.assertEqual(set(i18n.EN.keys()), set(i18n.ES.keys()))
+
+    def test_translation_differs_per_language(self):
+        from notify_sound import i18n
+
+        i18n.set_language("en")
+        en = i18n.t("master_label")
+        i18n.set_language("es")
+        es = i18n.t("master_label")
+        self.assertEqual(en, "Notification sound")
+        self.assertEqual(es, "Sonido de notificaciones")
+        self.assertNotEqual(en, es)
+
+    def test_interpolation_formats_kwargs(self):
+        from notify_sound import i18n
+
+        i18n.set_language("es")
+        self.assertEqual(
+            i18n.t("info_notification_count", count=5), "Notificaciones: 5"
+        )
+        i18n.set_language("en")
+        self.assertEqual(
+            i18n.t("info_notification_count", count=5), "Notifications: 5"
+        )
+
+    def test_unknown_key_returns_key(self):
+        from notify_sound import i18n
+
+        self.assertEqual(i18n.t("clave_inexistente"), "clave_inexistente")
+
+    def test_set_language_ignores_unsupported_values(self):
+        from notify_sound import i18n
+
+        i18n.set_language("fr")
+        self.assertEqual(i18n.get_language(), "en")
+        i18n.set_language("es")
+        self.assertEqual(i18n.get_language(), "es")
 
 
 class SoundTests(unittest.TestCase):
@@ -3187,7 +3287,8 @@ class GuiTests(unittest.TestCase):
                 "aimp": {"seen_count": 5, "comm": "aimp", "last_seen": 1700000000.0},
             },
         }
-        with mock.patch.object(config, "load_state", return_value=fake_state):
+        with mock.patch.object(config, "load_state", return_value=fake_state), \
+             _spanish():
             info = window._format_app_info("aimp")
         self.assertIn("Nombre de notificación: aimp", info)
         self.assertIn("Mostrado como: AIMP", info)
@@ -3203,7 +3304,8 @@ class GuiTests(unittest.TestCase):
         cfg = {"apps": {"warp": {"enabled": True, "sound": None}}}
         window = _bare_window(cfg)
         fake_state = {"apps_seen": ["warp"], "app_meta": {}}
-        with mock.patch.object(config, "load_state", return_value=fake_state):
+        with mock.patch.object(config, "load_state", return_value=fake_state), \
+             _spanish():
             info = window._format_app_info("warp")
         self.assertIn("aún no se ha observado", info)
         self.assertIn("Proceso emisor: —", info)
@@ -3362,7 +3464,7 @@ class GuiTests(unittest.TestCase):
         window._populate_app_dropdown("newapp", entry)
         dropdown.set_model.assert_called_once()
         model_arg = dropdown.set_model.call_args.args[0]
-        self.assertEqual(model_arg.get_string(0), gui.INHERITED)
+        self.assertEqual(model_arg.get_string(0), gui.i18n.t("inherited"))
         self.assertEqual(model_arg.get_string(1), "message")
         self.assertEqual(model_arg.get_string(2), "bell")
         dropdown.set_selected.assert_called_once_with(0)
@@ -3755,49 +3857,60 @@ class GuiRulesTests(unittest.TestCase):
         from notify_sound import gui
 
         cfg = {"apps": {"warp": {"enabled": True, "sound": None}}}
-        window = self._row_window(cfg)
-        button = window.app_rows["warp"]["rules_button"]
-        tooltip = button.get_tooltip_text()
+        with _spanish():
+            window = self._row_window(cfg)
+            button = window.app_rows["warp"]["rules_button"]
+            tooltip = button.get_tooltip_text()
         self.assertIsNotNone(tooltip)
         self.assertIn("reglas", tooltip.lower())
 
     def test_rule_field_options_include_titulo_not_resumen(self):
         from notify_sound import gui
 
-        labels = [label for _, label in gui.RULE_FIELDS]
+        with _spanish():
+            fields = gui.rule_fields()
+        labels = [label for _, label in fields]
         self.assertIn("Título", labels)
         self.assertNotIn("Resumen", labels)
-        self.assertIn(("summary", "Título"), gui.RULE_FIELDS)
+        self.assertIn(("summary", "Título"), fields)
 
     def test_rule_field_options_exclude_desktop_entry(self):
         from notify_sound import gui
 
-        values = [value for value, _ in gui.RULE_FIELDS]
-        labels = [label for _, label in gui.RULE_FIELDS]
+        with _spanish():
+            fields = gui.rule_fields()
+        values = [value for value, _ in fields]
+        labels = [label for _, label in fields]
         self.assertNotIn("desktop-entry", values)
         self.assertNotIn("Entrada desktop", labels)
 
     def test_rule_op_options_include_starts_with_ends_with(self):
         from notify_sound import gui
 
-        self.assertIn(("starts_with", "Empieza con"), gui.RULE_OPS)
-        self.assertIn(("ends_with", "Termina con"), gui.RULE_OPS)
+        with _spanish():
+            ops = gui.rule_ops()
+        self.assertIn(("starts_with", "Empieza con"), ops)
+        self.assertIn(("ends_with", "Termina con"), ops)
 
     def test_rule_field_options_count(self):
         from notify_sound import gui
 
-        self.assertEqual(len(gui.RULE_FIELDS), 3)
+        with _spanish():
+            fields = gui.rule_fields()
+        self.assertEqual(len(fields), 3)
         self.assertEqual(
-            [label for _, label in gui.RULE_FIELDS],
+            [label for _, label in fields],
             ["Cuerpo", "Título", "Urgencia"],
         )
 
     def test_rule_op_options_count(self):
         from notify_sound import gui
 
-        self.assertEqual(len(gui.RULE_OPS), 5)
+        with _spanish():
+            ops = gui.rule_ops()
+        self.assertEqual(len(ops), 5)
         self.assertEqual(
-            [label for _, label in gui.RULE_OPS],
+            [label for _, label in ops],
             ["Contiene", "Regex", "Igual", "Empieza con", "Termina con"],
         )
 
@@ -3838,16 +3951,17 @@ class GuiRulesTests(unittest.TestCase):
     def test_rule_value_dropdown_options_are_baja_normal_critica(self):
         from notify_sound import gui
 
-        window = self._row_window({"apps": {"warp": {"enabled": True}}})
-        rule = {
-            "match": {"field": "urgency", "op": "eq", "value": 1},
-            "action": "sound",
-            "sound": "message",
-        }
-        row = window._build_rule_row("warp", rule, gui.Gtk.ListBox())
-        widgets = row.widgets
-        model = widgets["urgency"].get_model()
-        labels = [model.get_string(i) for i in range(model.get_n_items())]
+        with _spanish():
+            window = self._row_window({"apps": {"warp": {"enabled": True}}})
+            rule = {
+                "match": {"field": "urgency", "op": "eq", "value": 1},
+                "action": "sound",
+                "sound": "message",
+            }
+            row = window._build_rule_row("warp", rule, gui.Gtk.ListBox())
+            widgets = row.widgets
+            model = widgets["urgency"].get_model()
+            labels = [model.get_string(i) for i in range(model.get_n_items())]
         self.assertEqual(labels, ["Baja", "Normal", "Crítica"])
 
     def test_rule_value_switches_to_dropdown_when_field_changes_to_urgency(self):
@@ -4258,6 +4372,117 @@ class GuiDebounceTests(unittest.TestCase):
         save.assert_called_once_with()
         self.assertIsInstance(cfg["debounce_window"], float)
         self.assertEqual(cfg["debounce_window"], 2.0)
+
+
+class GuiI18nTests(unittest.TestCase):
+    """Tests del selector de idioma in-GUI y su aplicación en caliente
+    (ADR 0013)."""
+
+    def _built_window(self, cfg):
+        """Ventana con `_build_ui` ejecutado (widgets GTK reales, sin
+        display) y el idioma activo fijado desde la config."""
+        from notify_sound import gui, i18n
+
+        window = gui.NotifyWindow.__new__(gui.NotifyWindow)
+        gui.Gtk.Widget.__init__(window)
+        window.cfg = cfg
+        window.theme_ids = ["message"]
+        window.app_rows = {}
+        window.custom_rows = {}
+        window._rebuilding = False
+        i18n.set_language(cfg.get("language", "en"))
+        window._build_ui()
+        return window
+
+    def _empty_state(self):
+        return {"apps_seen": [], "app_meta": {}}
+
+    def tearDown(self):
+        from notify_sound import i18n
+
+        i18n.set_language("en")
+
+    def test_build_ui_uses_default_english(self):
+        from notify_sound import gui
+
+        cfg = {
+            "enabled": True,
+            "sound": "message",
+            "custom_sounds": [],
+            "autostart": True,
+            "debounce_window": 2.0,
+            "language": "en",
+            "apps": {},
+        }
+        with mock.patch.object(config, "load_state", return_value=self._empty_state()):
+            window = self._built_window(cfg)
+        self.assertEqual(window.master_label.get_text(), "Notification sound")
+        self.assertEqual(
+            window.start_button.get_label(), "Start daemon"
+        )
+        self.assertEqual(window.language_dropdown.get_selected(), 0)
+
+    def test_build_ui_uses_spanish_when_configured(self):
+        from notify_sound import gui
+
+        cfg = {
+            "enabled": True,
+            "sound": "message",
+            "custom_sounds": [],
+            "autostart": True,
+            "debounce_window": 2.0,
+            "language": "es",
+            "apps": {},
+        }
+        with mock.patch.object(config, "load_state", return_value=self._empty_state()):
+            window = self._built_window(cfg)
+        self.assertEqual(
+            window.master_label.get_text(), "Sonido de notificaciones"
+        )
+        self.assertEqual(window.language_dropdown.get_selected(), 1)
+
+    def test_language_change_applies_hot_and_persists(self):
+        from notify_sound import gui, i18n
+
+        cfg = {
+            "enabled": True,
+            "sound": "message",
+            "custom_sounds": [],
+            "autostart": True,
+            "debounce_window": 2.0,
+            "language": "en",
+            "apps": {},
+        }
+        with mock.patch.object(config, "load_state", return_value=self._empty_state()):
+            window = self._built_window(cfg)
+            with mock.patch.object(window, "_save") as save:
+                window.language_dropdown.set_selected(1)
+        self.assertEqual(cfg["language"], "es")
+        self.assertEqual(i18n.get_language(), "es")
+        save.assert_called_once_with()
+        # La ventana se reconstruyó: el label maestro ya está en español.
+        self.assertEqual(
+            window.master_label.get_text(), "Sonido de notificaciones"
+        )
+
+    def test_language_change_to_same_language_is_noop(self):
+        from notify_sound import gui
+
+        cfg = {
+            "enabled": True,
+            "sound": "message",
+            "custom_sounds": [],
+            "autostart": True,
+            "debounce_window": 2.0,
+            "language": "en",
+            "apps": {},
+        }
+        with mock.patch.object(config, "load_state", return_value=self._empty_state()):
+            window = self._built_window(cfg)
+            with mock.patch.object(window, "_save") as save:
+                window.language_dropdown.set_selected(0)
+        save.assert_not_called()
+        self.assertEqual(cfg["language"], "en")
 
 
 class NotifySendTests(unittest.TestCase):
