@@ -62,17 +62,17 @@ def _spawn(command):
 
 class NotifyWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
-        # FASE1-CLOSE S5-r3: tamaño por defecto compacto. Alto 810: la
-        # ayuda avanzada salió de la ventana (popover), General ocupa una
-        # sola fila en 2 columnas, "Añadir sonido propio..." comparte fila
-        # con el sonido global y el valor de volumen ya no se dibuja sobre
-        # el slider. Ancho 860: la fila de app (nombre + sonido + volumen
-        # + botones + switch + papelera) cabe con margen gracias a la
-        # compactación de la fila (spacing 8, slider 110 px, nombre 24
-        # chars); ver test_app_row_fits_within_default_width.
+        # FASE1-CLOSE S5-r4: tamaño por defecto 820x870 (doble del ajuste
+        # S5-r3: -40 ancho, +60 alto). Alto 870: General vuelve a columna
+        # única (3 filas apiladas) y la ventana de ayuda avanzada ya no
+        # vive dentro de la ventana (flotante transitoria). Ancho 820: la
+        # fila de app (nombre + sonido + volumen + botones + switch +
+        # papelera) cabe con margen (~780 px disponibles tras márgenes y
+        # scrollbar frente a ~700 px estimados de contenido); ver
+        # test_app_row_fits_within_default_width.
         super().__init__(
             application=app, title="NotifySound",
-            default_width=860, default_height=810,
+            default_width=820, default_height=870,
         )
         self.cfg = config.load_config()
         # ADR 0013: el idioma activo se fija desde la config (default "en")
@@ -85,6 +85,9 @@ class NotifyWindow(Gtk.ApplicationWindow):
         self.custom_rows = {}
         self._rebuilding = False
         self.sort_dropdown = None
+        # S5-r4: la ventana de ayuda avanzada se crea bajo demanda en cada
+        # clic (idioma activo siempre actual); None = no hay abierta.
+        self.help_window = None
         self._build_ui()
         GLib.timeout_add(STATE_INTERVAL_MS, self._refresh_state)
 
@@ -124,20 +127,12 @@ class NotifyWindow(Gtk.ApplicationWindow):
         # visual sin recurrir a frames pesados.
         root.append(self._section_header(i18n.t("section_general")))
 
-        # S5-r3: General en 2 columnas homogéneas (column_homogeneous)
-        # para reducir altura. Cada columna ocupa exactamente la mitad
-        # del grid; el contenido de la izquierda (switches) se alinea en
-        # su mitad y el de la derecha (idioma + ayuda) en la suya, con
-        # column_spacing generoso que separa ambas sin separador visible.
-        self.general_grid = Gtk.Grid(
-            column_spacing=44, column_homogeneous=True,
-        )
-        left_col = Gtk.Box(
-            orientation=Gtk.Orientation.VERTICAL, spacing=10, hexpand=True,
-        )
-        right_col = Gtk.Box(
+        # S5-r4: General vuelve a columna única (master, autostart e
+        # idioma uno bajo otro, como al principio); el Grid de 2 columnas
+        # (S5-r3) se elimina. La ayuda avanzada ya no vive aquí: se movió
+        # a la esquina inferior derecha (fila del daemon).
+        general_box = Gtk.Box(
             orientation=Gtk.Orientation.VERTICAL, spacing=10,
-            valign=Gtk.Align.START,
         )
 
         master_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
@@ -150,7 +145,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
         self.master_switch.connect("notify::active", self._on_master_toggled)
         master_row.append(master_label)
         master_row.append(self.master_switch)
-        left_col.append(master_row)
+        general_box.append(master_row)
 
         autostart_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         autostart_label = Gtk.Label(
@@ -165,13 +160,12 @@ class NotifyWindow(Gtk.ApplicationWindow):
         )
         autostart_row.append(autostart_label)
         autostart_row.append(self.autostart_switch)
-        left_col.append(autostart_row)
+        general_box.append(autostart_row)
 
         # ADR 0013: selector de idioma in-GUI. Los nombres de idioma son
         # endónimos (cada idioma se nombra a sí mismo) y no se traducen.
         language_row = Gtk.Box(
             orientation=Gtk.Orientation.HORIZONTAL, spacing=10,
-            halign=Gtk.Align.START,
         )
         language_label = Gtk.Label(label=i18n.t("language_label"), xalign=0)
         self.language_dropdown = Gtk.DropDown(
@@ -186,24 +180,9 @@ class NotifyWindow(Gtk.ApplicationWindow):
         )
         language_row.append(language_label)
         language_row.append(self.language_dropdown)
-        right_col.append(language_row)
+        general_box.append(language_row)
 
-        # S5-r2: la ayuda avanzada vive en un popover superpuesto (no
-        # estira la ventana) accesible desde la zona alta, columna 2.
-        help_row = Gtk.Box(
-            orientation=Gtk.Orientation.HORIZONTAL, spacing=10,
-            halign=Gtk.Align.START,
-        )
-        self.help_button = Gtk.Button(label=i18n.t("help_label"))
-        self.help_button.props.valign = Gtk.Align.CENTER
-        self.help_button.connect("clicked", self._on_help_clicked)
-        self.help_popover = self._build_help_popover(self.help_button)
-        help_row.append(self.help_button)
-        right_col.append(help_row)
-
-        self.general_grid.attach(left_col, 0, 0, 1, 1)
-        self.general_grid.attach(right_col, 1, 0, 1, 1)
-        root.append(self.general_grid)
+        root.append(general_box)
 
         root.append(Gtk.Separator())
         root.append(self._section_header(i18n.t("section_sound")))
@@ -217,8 +196,10 @@ class NotifyWindow(Gtk.ApplicationWindow):
         self.sound_dropdown.connect("notify::selected", self._on_sound_changed)
         self.test_button = Gtk.Button(label=i18n.t("test_button"))
         self.test_button.connect("clicked", self._on_test)
+        # S5-r4: separación triplicada (12 -> 36) entre "Probar" y
+        # "Añadir sonido propio..." para que no parezcan un grupo.
         self.add_custom_button = Gtk.Button(label=i18n.t("add_custom_button"))
-        self.add_custom_button.set_margin_start(12)
+        self.add_custom_button.set_margin_start(36)
         self.add_custom_button.connect("clicked", self._on_add_custom)
         sound_row.append(sound_label)
         sound_row.append(self.sound_dropdown)
@@ -301,34 +282,46 @@ class NotifyWindow(Gtk.ApplicationWindow):
         scroll.set_child(self.apps_list)
         root.append(scroll)
 
-        # S5-r2: el estado del daemon vuelve al final de la ventana,
-        # debajo de la lista de apps, en una sola fila con los botones.
+        # S5-r4: el botón de ayuda avanzada vive en la esquina inferior
+        # derecha de la ventana: misma fila que los botones del daemon,
+        # alineado al final (halign END) tras el estado que expande.
         daemon_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         self.start_button = Gtk.Button(label=i18n.t("start_daemon"))
         self.start_button.connect("clicked", self._on_start_daemon)
         self.stop_button = Gtk.Button(label=i18n.t("stop_daemon"))
         self.stop_button.connect("clicked", self._on_stop_daemon)
         self.state_label = Gtk.Label(label="", xalign=0, hexpand=True)
+        self.help_button = Gtk.Button(label=i18n.t("help_label"))
+        self.help_button.props.valign = Gtk.Align.CENTER
+        self.help_button.props.halign = Gtk.Align.END
+        self.help_button.connect("clicked", self._on_help_clicked)
         daemon_row.append(self.start_button)
         daemon_row.append(self.stop_button)
         daemon_row.append(self.state_label)
+        daemon_row.append(self.help_button)
         root.append(daemon_row)
 
         self._populate_apps()
         self._refresh_custom_list()
         self._rebuild_all_dropdowns()
 
-    def _build_help_popover(self, button):
-        """Popover de ayuda avanzada anclado a ``button`` (S5-r3).
+    def _build_help_window(self):
+        """Ventana flotante transitoria de ayuda avanzada (S5-r4).
 
-        Se superpone a la ventana sin modificar sus dimensiones. Ancho
-        generoso (600 px) y alto natural del contenido
-        (propagate_natural_height): el popover crece hasta que el texto
-        se lea bien; el scroll solo aparece si el contenido supera el
-        máximo alto razonable (640 px). Se reconstruye con el idioma
-        activo en cada ``_build_ui`` (los comandos no se traducen).
+        Sustituye al popover (S5-r3): un popover no puede exceder el
+        ancho de la ventana (820 px) y el operador pidió un cuadro ~50 %
+        más ancho (900 px). Sigue el patrón del diálogo de reglas:
+        ventana transitoria con ~900 px de ancho, alto a contenido
+        (propagate_natural_height) con scroll solo si el contenido
+        excede el máximo razonable (700 px), destroy-with-parent y
+        cierre estándar (Escape y X, ambos nativos de Gtk.Window en
+        GTK4). Se construye bajo demanda en cada clic para que el idioma
+        activo sea siempre el actual; ``_on_help_clicked`` la ancla como
+        transitoria y la presenta.
         """
-        popover = Gtk.Popover()
+        window = Gtk.Window(title=i18n.t("help_window_title"))
+        window.set_destroy_with_parent(True)
+        window.set_default_size(900, -1)
         content = Gtk.Box(
             orientation=Gtk.Orientation.VERTICAL, spacing=8,
             margin_top=8, margin_bottom=8, margin_start=10, margin_end=10,
@@ -337,8 +330,8 @@ class NotifyWindow(Gtk.ApplicationWindow):
             hscrollbar_policy=Gtk.PolicyType.NEVER,
             vscrollbar_policy=Gtk.PolicyType.AUTOMATIC,
         )
-        scroll.set_max_content_height(640)
-        scroll.set_max_content_width(600)
+        scroll.set_max_content_height(700)
+        scroll.set_max_content_width(900)
         scroll.set_propagate_natural_height(True)
         help_box = Gtk.Box(
             orientation=Gtk.Orientation.VERTICAL, spacing=8,
@@ -388,13 +381,20 @@ class NotifyWindow(Gtk.ApplicationWindow):
             help_box.append(feature_label)
         scroll.set_child(help_box)
         content.append(scroll)
-        popover.set_child(content)
-        popover.set_parent(button)
-        return popover
+        window.set_child(content)
+        return window
 
     def _on_help_clicked(self, button):
-        """Abre el popover de ayuda avanzada (S5-r2)."""
-        self.help_popover.popup()
+        """Abre la ventana flotante de ayuda avanzada (S5-r4).
+
+        Si ya hay una abierta se destruye y se crea una nueva: el
+        contenido siempre se construye con el idioma activo actual.
+        """
+        if self.help_window is not None:
+            self.help_window.destroy()
+        self.help_window = self._build_help_window()
+        self.help_window.set_transient_for(self)
+        self.help_window.present()
 
     def _on_language_changed(self, dropdown, param):
         """Aplica el cambio de idioma en caliente (ADR 0013).
@@ -419,12 +419,12 @@ class NotifyWindow(Gtk.ApplicationWindow):
         sort_selection = 0
         if self.sort_dropdown is not None:
             sort_selection = self.sort_dropdown.get_selected()
-        # S5-r2: el popover de ayuda es child del botón (set_parent); se
-        # cierra y desancla antes de destruir el árbol para que el botón
-        # no se finalice con children vivos (warning de GTK).
-        if getattr(self, "help_popover", None) is not None:
-            self.help_popover.popdown()
-            self.help_popover.unparent()
+        # S5-r4: si la ventana de ayuda está abierta se destruye antes
+        # de reconstruir el árbol; no quedan ventanas huérfanas (la
+        # nueva se creará con el idioma activo en el próximo clic).
+        if getattr(self, "help_window", None) is not None:
+            self.help_window.destroy()
+            self.help_window = None
         self.set_child(None)
         self.app_rows = {}
         self.custom_rows = {}

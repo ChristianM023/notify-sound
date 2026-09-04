@@ -115,6 +115,7 @@ EN = {
     "audio_filter": "Audio",
     "language_label": "Language:",
     "help_label": "Advanced help",
+    "help_window_title": "Advanced help",
     "help_done_heading": "Notify when a command finishes",
     "help_done_intro": (
         "The `notify-sound done` command sends a completion notification "
@@ -252,6 +253,7 @@ ES = {
     "audio_filter": "Audio",
     "language_label": "Idioma:",
     "help_label": "Ayuda avanzada",
+    "help_window_title": "Ayuda avanzada",
     "help_done_heading": "Notificar cuando termina un comando",
     "help_done_intro": (
         "El comando `notify-sound done` envía una notificación de "
