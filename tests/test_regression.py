@@ -3513,7 +3513,10 @@ class GuiTests(unittest.TestCase):
 
         entry = window.app_rows["warp"]
         label = entry["name_label"]
-        self.assertEqual(label._spy_width, 28)
+        # S5-r3: 24 chars (antes 28) para que la fila de app quepa en el
+        # ancho por defecto reducido (860 px); el label expande si sobra
+        # espacio y el nombre completo vive en el tooltip.
+        self.assertEqual(label._spy_width, 24)
         self.assertEqual(label._spy_max_width, 50)
 
     def test_sort_apps_by_name_and_by_count(self):
@@ -4486,10 +4489,11 @@ class GuiI18nTests(unittest.TestCase):
 
 
 class GuiHelpInfoTests(unittest.TestCase):
-    """Tests de la ayuda avanzada (FASE1-CLOSE, S5-r2): acceso en la zona
+    """Tests de la ayuda avanzada (FASE1-CLOSE, S5-r3): acceso en la zona
     alta (columna 2 de General) que abre un popover superpuesto sin
     modificar las dimensiones de la ventana; contenido íntegro y
-    traducido por catálogo (ADR 0013).
+    traducido por catálogo (ADR 0013), con tamaño generoso y alto
+    natural para que sea legible.
     """
 
     def _built_window(self, cfg):
@@ -4597,8 +4601,9 @@ class GuiHelpInfoTests(unittest.TestCase):
         self.assertFalse(hasattr(window, "help_expander"))
 
     def test_help_popover_content_scrolls_with_fixed_max_height(self):
-        # El contenido de ayuda es scrolleable con altura máxima fija
-        # (S5-r2): el popover no estira la ventana.
+        # El contenido de ayuda es scrolleable con altura máxima acotada
+        # (S5-r3): el popover no estira la ventana y el scroll solo
+        # aparece si el contenido excede el máximo.
         from notify_sound import gui
 
         with mock.patch.object(config, "load_state", return_value=self._empty_state()):
@@ -4608,12 +4613,31 @@ class GuiHelpInfoTests(unittest.TestCase):
         self.assertTrue(scrolls, "el contenido de ayuda debe ser scrolleable")
         self.assertGreater(scrolls[0].get_max_content_height(), 0)
 
+    def test_help_popover_large_and_natural_height(self):
+        # S5-r3: la ayuda debe ser legible. El popover usa ancho generoso
+        # (>= 580 px), alto natural del contenido (propagate_natural_height)
+        # y un máximo alto razonable (~600-650 px) para que el scroll solo
+        # aparezca si el contenido excede.
+        from notify_sound import gui
+
+        with mock.patch.object(config, "load_state", return_value=self._empty_state()):
+            window = self._built_window(self._cfg("en"))
+        scrolls = []
+        self._collect_scrolls(window.help_popover.get_child(), scrolls)
+        self.assertTrue(scrolls, "el contenido de ayuda debe ser scrolleable")
+        scroll = scrolls[0]
+        self.assertGreaterEqual(scroll.get_max_content_width(), 580)
+        self.assertTrue(scroll.get_propagate_natural_height())
+        self.assertGreaterEqual(scroll.get_max_content_height(), 600)
+        self.assertLessEqual(scroll.get_max_content_height(), 700)
+
 
 class GuiVisualPolishTests(unittest.TestCase):
-    """Tests del pulido visual FASE1-CLOSE (S5-r2): secciones con
-    encabezado, General en 2 columnas, ayuda en popover, estado del daemon
-    al final de la ventana, valor de volumen como label junto al slider,
-    filas compactas y tamaños por defecto reducidos.
+    """Tests del pulido visual FASE1-CLOSE (S5-r3): secciones con
+    encabezado, General en 2 columnas homogéneas con separación clara,
+    ayuda en popover grande legible, estado del daemon al final de la
+    ventana, valor de volumen como label junto al slider, filas
+    compactas y tamaños por defecto ajustados (860x810).
     """
 
     def _built_window(self, cfg):
@@ -4760,6 +4784,18 @@ class GuiVisualPolishTests(unittest.TestCase):
         self.assertTrue(self._contains(grid, window.language_dropdown))
         self.assertTrue(self._contains(grid, window.help_button))
 
+    def test_general_grid_columns_homogeneous_with_clear_spacing(self):
+        # S5-r3: las 2 columnas de General son homogéneas (mismo ancho,
+        # sin separador visible) y con separación clara entre ambas para
+        # que los switches no queden pegados al contenido de la derecha.
+        from notify_sound import gui
+
+        with mock.patch.object(config, "load_state", return_value=self._empty_state()):
+            window = self._built_window(self._cfg("en"))
+        grid = window.general_grid
+        self.assertTrue(grid.get_column_homogeneous())
+        self.assertGreaterEqual(grid.get_column_spacing(), 40)
+
     def test_add_custom_button_shares_row_with_global_sound(self):
         from notify_sound import gui
 
@@ -4779,6 +4815,15 @@ class GuiVisualPolishTests(unittest.TestCase):
             children.index(window.test_button),
             children.index(window.add_custom_button),
         )
+
+    def test_add_custom_button_has_extra_margin(self):
+        # S5-r3: "Añadir sonido propio..." se separa visualmente del
+        # botón Probar con un margen extra (mismo hbox, sin agruparlos).
+        from notify_sound import gui
+
+        with mock.patch.object(config, "load_state", return_value=self._empty_state()):
+            window = self._built_window(self._cfg("en"))
+        self.assertGreater(window.add_custom_button.get_margin_start(), 0)
 
     def test_debounce_row_is_compact(self):
         from notify_sound import gui
@@ -4826,12 +4871,61 @@ class GuiVisualPolishTests(unittest.TestCase):
         ) as win_init:
             gui.NotifyWindow.__init__(window, mock.Mock())
         kwargs = win_init.call_args.kwargs
-        # S5-r2: ancho reducido (860-880) manteniendo visible switch y
-        # papelera de la fila de app; alto en 740-820 tras compactar.
-        self.assertGreaterEqual(kwargs["default_width"], 860)
-        self.assertLessEqual(kwargs["default_width"], 880)
-        self.assertGreaterEqual(kwargs["default_height"], 740)
+        # S5-r3: ancho reducido (850-870) manteniendo visible switch y
+        # papelera de la fila de app (ver test_app_row_fits_within_default_width);
+        # alto en 800-820 tras compactar.
+        self.assertGreaterEqual(kwargs["default_width"], 850)
+        self.assertLessEqual(kwargs["default_width"], 870)
+        self.assertGreaterEqual(kwargs["default_height"], 800)
         self.assertLessEqual(kwargs["default_height"], 820)
+
+    def test_app_row_fits_within_default_width(self):
+        # S5-r3: verificación por estimación de que la fila de app
+        # completa (nombre + sonido + volumen + botones + switch +
+        # papelera) cabe en el ancho por defecto reducido (860 px) sin
+        # recorte. Los valores reales de la fila se leen de los widgets;
+        # las constantes de ancho (char, botón icono, switch, dropdown,
+        # padding) son estimaciones conservadoras de GTK4.
+        from notify_sound import gui
+
+        cfg = {"apps": {"warp": {"enabled": True, "sound": None}}}
+        window = _bare_window(cfg)
+        window.theme_ids = ["message"]
+        window._ensure_app_row("warp")
+        entry = window.app_rows["warp"]
+        box = entry["row"].get_child()
+        children = []
+        child = box.get_first_child()
+        while child is not None:
+            children.append(child)
+            child = child.get_next_sibling()
+        char_px = 7
+        icon_button_px = 32
+        switch_px = 46
+        dropdown_px = 140
+        row_padding_px = 12
+        name_px = entry["name_label"].get_width_chars() * char_px
+        volume_px = entry["volume_scale"].get_size_request()[0]
+        volume_label_px = entry["volume_label"].get_width_chars() * char_px
+        icon_buttons = sum(
+            1
+            for w in children
+            if isinstance(w, gui.Gtk.Button) and w.get_icon_name()
+        )
+        estimated = (
+            name_px
+            + dropdown_px
+            + volume_px
+            + volume_label_px
+            + icon_buttons * icon_button_px
+            + switch_px
+            + box.get_spacing() * (len(children) - 1)
+            + row_padding_px
+        )
+        # Disponible: ancho por defecto menos márgenes de ventana (28 px)
+        # y scrollbar de la lista (~12 px).
+        available = 860 - 40
+        self.assertLess(estimated, available)
 
 
 class NotifySendTests(unittest.TestCase):

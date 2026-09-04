@@ -62,15 +62,17 @@ def _spawn(command):
 
 class NotifyWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
-        # FASE1-CLOSE S5-r2: tamaño por defecto compacto. Alto 780: la
+        # FASE1-CLOSE S5-r3: tamaño por defecto compacto. Alto 810: la
         # ayuda avanzada salió de la ventana (popover), General ocupa una
         # sola fila en 2 columnas, "Añadir sonido propio..." comparte fila
         # con el sonido global y el valor de volumen ya no se dibuja sobre
-        # el slider. Ancho 880: la fila de app (nombre + sonido + volumen
-        # + botones + switch + papelera) cabe con margen.
+        # el slider. Ancho 860: la fila de app (nombre + sonido + volumen
+        # + botones + switch + papelera) cabe con margen gracias a la
+        # compactación de la fila (spacing 8, slider 110 px, nombre 24
+        # chars); ver test_app_row_fits_within_default_width.
         super().__init__(
             application=app, title="NotifySound",
-            default_width=880, default_height=780,
+            default_width=860, default_height=810,
         )
         self.cfg = config.load_config()
         # ADR 0013: el idioma activo se fija desde la config (default "en")
@@ -122,10 +124,14 @@ class NotifyWindow(Gtk.ApplicationWindow):
         # visual sin recurrir a frames pesados.
         root.append(self._section_header(i18n.t("section_general")))
 
-        # S5-r2: General en 2 columnas para reducir altura. Columna
-        # izquierda: switches (master + autostart). Columna derecha:
-        # selector de idioma + acceso a la ayuda avanzada (popover).
-        self.general_grid = Gtk.Grid(column_spacing=24)
+        # S5-r3: General en 2 columnas homogéneas (column_homogeneous)
+        # para reducir altura. Cada columna ocupa exactamente la mitad
+        # del grid; el contenido de la izquierda (switches) se alinea en
+        # su mitad y el de la derecha (idioma + ayuda) en la suya, con
+        # column_spacing generoso que separa ambas sin separador visible.
+        self.general_grid = Gtk.Grid(
+            column_spacing=44, column_homogeneous=True,
+        )
         left_col = Gtk.Box(
             orientation=Gtk.Orientation.VERTICAL, spacing=10, hexpand=True,
         )
@@ -202,8 +208,9 @@ class NotifyWindow(Gtk.ApplicationWindow):
         root.append(Gtk.Separator())
         root.append(self._section_header(i18n.t("section_sound")))
 
-        # S5-r2: "Añadir sonido propio..." comparte fila con el sonido
-        # global, separado del botón Probar (una fila menos de altura).
+        # S5-r3: "Añadir sonido propio..." comparte fila con el sonido
+        # global, separado del botón Probar por un margen extra (una fila
+        # menos de altura, sin que ambos botones parezcan un grupo).
         sound_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         sound_label = Gtk.Label(label=i18n.t("sound_label"), xalign=0)
         self.sound_dropdown = Gtk.DropDown()
@@ -211,6 +218,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
         self.test_button = Gtk.Button(label=i18n.t("test_button"))
         self.test_button.connect("clicked", self._on_test)
         self.add_custom_button = Gtk.Button(label=i18n.t("add_custom_button"))
+        self.add_custom_button.set_margin_start(12)
         self.add_custom_button.connect("clicked", self._on_add_custom)
         sound_row.append(sound_label)
         sound_row.append(self.sound_dropdown)
@@ -311,12 +319,14 @@ class NotifyWindow(Gtk.ApplicationWindow):
         self._rebuild_all_dropdowns()
 
     def _build_help_popover(self, button):
-        """Popover de ayuda avanzada anclado a ``button`` (S5-r2).
+        """Popover de ayuda avanzada anclado a ``button`` (S5-r3).
 
-        Se superpone a la ventana sin modificar sus dimensiones. El
-        contenido es scrolleable con altura máxima fija y se reconstruye
-        con el idioma activo en cada ``_build_ui`` (los comandos no se
-        traducen).
+        Se superpone a la ventana sin modificar sus dimensiones. Ancho
+        generoso (600 px) y alto natural del contenido
+        (propagate_natural_height): el popover crece hasta que el texto
+        se lea bien; el scroll solo aparece si el contenido supera el
+        máximo alto razonable (640 px). Se reconstruye con el idioma
+        activo en cada ``_build_ui`` (los comandos no se traducen).
         """
         popover = Gtk.Popover()
         content = Gtk.Box(
@@ -327,9 +337,9 @@ class NotifyWindow(Gtk.ApplicationWindow):
             hscrollbar_policy=Gtk.PolicyType.NEVER,
             vscrollbar_policy=Gtk.PolicyType.AUTOMATIC,
         )
-        scroll.set_max_content_height(420)
-        scroll.set_max_content_width(460)
-        scroll.set_propagate_natural_height(False)
+        scroll.set_max_content_height(640)
+        scroll.set_max_content_width(600)
+        scroll.set_propagate_natural_height(True)
         help_box = Gtk.Box(
             orientation=Gtk.Orientation.VERTICAL, spacing=8,
         )
@@ -472,7 +482,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
             switch_active = not has_own_sound
         row = Gtk.ListBoxRow()
         box = Gtk.Box(
-            orientation=Gtk.Orientation.HORIZONTAL, spacing=10,
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=8,
             margin_top=4, margin_bottom=4,
         )
         name_box = Gtk.Box(
@@ -484,7 +494,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
             ellipsize=Pango.EllipsizeMode.END,
             tooltip_text=app_name,
         )
-        name_label.set_width_chars(28)
+        name_label.set_width_chars(24)
         name_label.set_max_width_chars(50)
         # OWN-001: etiqueta/icono "Tiene sonido propio", visible siempre que
         # la app reproduzca su propio sonido (informa, no bloquea).
@@ -520,7 +530,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
         volume_scale.set_tooltip_text(i18n.t("volume_tooltip"))
         volume_scale.props.valign = Gtk.Align.CENTER
         volume_scale.set_hexpand(False)
-        volume_scale.set_size_request(120, -1)
+        volume_scale.set_size_request(110, -1)
         # S5-r2: el valor numérico del volumen vive en un label pequeño
         # junto al slider (dibujarlo sobre el slider aumentaba la altura
         # de la fila). Se actualiza en value-changed.
