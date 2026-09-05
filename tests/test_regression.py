@@ -4973,6 +4973,17 @@ class NotifySendTests(unittest.TestCase):
     INTERFACE = "org.freedesktop.Notifications"
     METHOD = "Notify"
 
+    def setUp(self):
+        # El guard de notify.send_done_notification exige
+        # DBUS_SESSION_BUS_ADDRESS antes de tocar el bus; en CI (sin sesión
+        # gráfica) no existe. Se inyecta un valor fake para que los tests
+        # ejerciten el bus mockeado.
+        env = mock.patch.dict(
+            os.environ, {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/notify-sound-test"}
+        )
+        env.start()
+        self.addCleanup(env.stop)
+
     def _fake_gio(self, bus=None):
         """Fake de `notify.Gio` con `bus_get_sync` devolviendo `bus`."""
         fake_gio = mock.Mock()
