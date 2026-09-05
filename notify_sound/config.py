@@ -1,6 +1,7 @@
 import fcntl
 import json
 import os
+import re
 import shutil
 import tempfile
 
@@ -28,6 +29,7 @@ MAX_STATE_BYTES = 256 * 1024
 MAX_STATE_APPS = 512
 MAX_APP_NAME_LENGTH = 256
 MAX_SYNONYMS = 64
+MAX_RULES = 64
 MAX_PATH_LENGTH = 4096
 
 AUTOSTART_DESKTOP = """[Desktop Entry]
@@ -45,10 +47,14 @@ DEFAULT_CONFIG = {
     "enabled": True,
     "sound": "message",
     "custom_sounds": [],
-    "no_duplicate": True,
     "autostart": True,
+    "debounce_window": 2.0,
+    "language": "en",
     "apps": {},
 }
+
+_RULE_OPS = ("contains", "regex", "eq", "starts_with", "ends_with")
+_RULE_ACTIONS = ("sound", "silence")
 
 
 def autostart_enabled():
@@ -99,6 +105,79 @@ def set_autostart(enabled):
             pass
 
 
+def _normalize_rules(rules):
+    """Normaliza la lista de reglas de una app (RULE-001).
+
+    Reglas malformadas se descartan sin romper el resto; el resultado se
+    acota a las primeras ``MAX_RULES`` reglas validas (las malformadas no
+    cuentan hacia el limite). Si el origen no es una lista, se devuelve
+    ``[]``. Cada regla valida queda como
+    ``{"match": {field, op, value}, "action": ...}`` y, si la accion es
+    ``"sound"``, con ``"sound"`` acotado (mismo criterio que el campo
+    ``sound`` de la app).
+    """
+    if not isinstance(rules, list):
+        return []
+    normalized = []
+    for rule in rules:
+        if len(normalized) >= MAX_RULES:
+            break
+        if not isinstance(rule, dict):
+            continue
+        match = rule.get("match")
+        if not isinstance(match, dict):
+            continue
+        field = match.get("field")
+        op = match.get("op")
+        value = match.get("value")
+        if not (
+            isinstance(field, str)
+            and 0 < len(field) <= MAX_APP_NAME_LENGTH
+        ):
+            continue
+        if op not in _RULE_OPS:
+            continue
+        if op in ("contains", "regex", "starts_with", "ends_with"):
+            if not (
+                isinstance(value, str)
+                and 0 < len(value) <= MAX_PATH_LENGTH
+            ):
+                continue
+        else:  # eq: int (no bool) o string acotado
+            if isinstance(value, bool):
+                continue
+            if not (
+                isinstance(value, int)
+                or (
+                    isinstance(value, str)
+                    and 0 < len(value) <= MAX_PATH_LENGTH
+                )
+            ):
+                continue
+        if op == "regex":
+            try:
+                re.compile(value)
+            except re.error:
+                continue
+        action = rule.get("action")
+        if action not in _RULE_ACTIONS:
+            continue
+        clean = {
+            "match": {"field": field, "op": op, "value": value},
+            "action": action,
+        }
+        if action == "sound":
+            sound = rule.get("sound")
+            if not (
+                isinstance(sound, str)
+                and 0 < len(sound) <= MAX_PATH_LENGTH
+            ):
+                continue
+            clean["sound"] = sound
+        normalized.append(clean)
+    return normalized
+
+
 def _normalize_app(app):
     normalized = dict(app) if isinstance(app, dict) else {}
     enabled = normalized.get("enabled", True)
@@ -133,6 +212,24 @@ def _normalize_app(app):
         normalized["synonyms"] = clean_synonyms
     else:
         normalized.pop("synonyms", None)
+    # Volumen por app: int 0-100, default 100. 0 es silencio válido y no
+    # debe confundirse con ausencia de campo; los bools son subclase de
+    # int en Python y se descartan como inválidos.
+    volume = normalized.get("volume")
+    normalized["volume"] = (
+        volume
+        if isinstance(volume, int)
+        and not isinstance(volume, bool)
+        and 0 <= volume <= 100
+        else 100
+    )
+    # Reglas por contenido/hints (RULE-001): se normalizan y se quitan si
+    # la lista queda vacia (mismo criterio que synonyms).
+    rules = _normalize_rules(normalized.get("rules"))
+    if rules:
+        normalized["rules"] = rules
+    else:
+        normalized.pop("rules", None)
     return normalized
 
 
@@ -240,8 +337,9 @@ def load_config():
         "enabled": DEFAULT_CONFIG["enabled"],
         "sound": DEFAULT_CONFIG["sound"],
         "custom_sounds": list(DEFAULT_CONFIG["custom_sounds"]),
-        "no_duplicate": DEFAULT_CONFIG["no_duplicate"],
         "autostart": DEFAULT_CONFIG["autostart"],
+        "debounce_window": DEFAULT_CONFIG["debounce_window"],
+        "language": DEFAULT_CONFIG["language"],
         "apps": {},
     }
     data = {}
@@ -266,7 +364,18 @@ def load_config():
                     for p in value
                     if isinstance(p, str) and 0 < len(p) <= MAX_PATH_LENGTH
                 ]
-            elif key in ("enabled", "no_duplicate", "autostart") and isinstance(
+            elif (
+                key == "debounce_window"
+                and isinstance(value, (int, float))
+                and not isinstance(value, bool)
+                and value >= 0
+            ):
+                cfg["debounce_window"] = float(value)
+            elif key == "language" and value in ("en", "es"):
+                # ADR 0013: idioma de la GUI; cualquier otro valor cae en
+                # el default fijo "en".
+                cfg["language"] = value
+            elif key in ("enabled", "autostart") and isinstance(
                 value, bool
             ):
                 cfg[key] = value
@@ -370,6 +479,7 @@ def load_state():
                     seen_count = meta.get("seen_count", 0)
                     last_seen = meta.get("last_seen")
                     comm = meta.get("comm")
+                    has_own_sound = meta.get("has_own_sound")
                     entry = {}
                     if isinstance(seen_count, int) and seen_count >= 0:
                         entry["seen_count"] = seen_count
@@ -380,6 +490,10 @@ def load_state():
                         and 0 < len(comm) <= MAX_APP_NAME_LENGTH
                     ):
                         entry["comm"] = comm
+                    # OWN-001: has_own_sound (bool) se conserva solo si es
+                    # valido; ausente o invalido se omite (default false).
+                    if isinstance(has_own_sound, bool):
+                        entry["has_own_sound"] = has_own_sound
                     if entry:
                         app_meta[name] = entry
                     if len(app_meta) >= MAX_STATE_APPS:
@@ -421,12 +535,17 @@ def save_state(state):
             seen_count = meta.get("seen_count", 0)
             last_seen = meta.get("last_seen")
             comm = meta.get("comm")
+            has_own_sound = meta.get("has_own_sound")
             if isinstance(seen_count, int) and seen_count >= 0:
                 entry["seen_count"] = seen_count
             if isinstance(last_seen, (int, float)) and last_seen >= 0:
                 entry["last_seen"] = last_seen
             if isinstance(comm, str) and 0 < len(comm) <= MAX_APP_NAME_LENGTH:
                 entry["comm"] = comm
+            # OWN-001: has_own_sound (bool) se persiste solo si es valido;
+            # ausente o invalido se descarta (default false implicito).
+            if isinstance(has_own_sound, bool):
+                entry["has_own_sound"] = has_own_sound
             if entry:
                 app_meta[name] = entry
             if len(app_meta) >= MAX_STATE_APPS:

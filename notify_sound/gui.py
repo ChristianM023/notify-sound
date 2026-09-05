@@ -6,17 +6,42 @@ from datetime import datetime
 import gi
 
 gi.require_version("Gtk", "4.0")
+gi.require_version("Gdk", "4.0")
 gi.require_version("Pango", "1.0")
-from gi.repository import GLib, Gtk, Pango
+from gi.repository import GObject, Gdk, GLib, Gtk, Pango
 
-from . import config, player, sounds
+from . import config, i18n, player, sounds
 
-INHERITED = "__inherited__"
+
+def rule_fields():
+    """Opciones de campo de regla con labels según el idioma activo."""
+    return (
+        ("body", i18n.t("rule_field_body")),
+        ("summary", i18n.t("rule_field_summary")),
+        ("urgency", i18n.t("rule_field_urgency")),
+    )
+
+
+def rule_ops():
+    """Opciones de operador de regla con labels según el idioma activo."""
+    return (
+        ("contains", i18n.t("rule_op_contains")),
+        ("regex", i18n.t("rule_op_regex")),
+        ("eq", i18n.t("rule_op_eq")),
+        ("starts_with", i18n.t("rule_op_starts_with")),
+        ("ends_with", i18n.t("rule_op_ends_with")),
+    )
+
+
+def rule_actions():
+    """Opciones de acción de regla con labels según el idioma activo."""
+    return (
+        ("sound", i18n.t("rule_action_sound")),
+        ("silence", i18n.t("rule_action_silence")),
+    )
+
+
 STATE_INTERVAL_MS = 2000
-FORMATS_HINT = (
-    "Formatos: OGG, WAV y FLAC. MP3/M4A/AAC necesitan gst-launch-1.0, "
-    "ffplay, mpv o mpg123."
-)
 
 
 def _entrypoint():
@@ -37,11 +62,22 @@ def _spawn(command):
 
 class NotifyWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
+        # FASE1-CLOSE S5-r4: tamaño por defecto 820x870 (doble del ajuste
+        # S5-r3: -40 ancho, +60 alto). Alto 870: General vuelve a columna
+        # única (3 filas apiladas) y la ventana de ayuda avanzada ya no
+        # vive dentro de la ventana (flotante transitoria). Ancho 820: la
+        # fila de app (nombre + sonido + volumen + botones + switch +
+        # papelera) cabe con margen (~780 px disponibles tras márgenes y
+        # scrollbar frente a ~700 px estimados de contenido); ver
+        # test_app_row_fits_within_default_width.
         super().__init__(
             application=app, title="NotifySound",
-            default_width=720, default_height=950,
+            default_width=820, default_height=870,
         )
         self.cfg = config.load_config()
+        # ADR 0013: el idioma activo se fija desde la config (default "en")
+        # antes de construir la UI; el selector in-GUI lo cambia en caliente.
+        i18n.set_language(self.cfg.get("language", "en"))
         self.theme_ids = sorted(sounds.list_sounds().keys())
         if not self.theme_ids:
             self.theme_ids = ["message"]
@@ -49,6 +85,9 @@ class NotifyWindow(Gtk.ApplicationWindow):
         self.custom_rows = {}
         self._rebuilding = False
         self.sort_dropdown = None
+        # S5-r4: la ventana de ayuda avanzada se crea bajo demanda en cada
+        # clic (idioma activo siempre actual); None = no hay abierta.
+        self.help_window = None
         self._build_ui()
         GLib.timeout_add(STATE_INTERVAL_MS, self._refresh_state)
 
@@ -70,6 +109,12 @@ class NotifyWindow(Gtk.ApplicationWindow):
             return choices[index][1]
         return None
 
+    def _section_header(self, text):
+        """Encabezado de sección con la clase GTK estándar 'heading'."""
+        header = Gtk.Label(label=text, xalign=0, hexpand=True)
+        header.add_css_class("heading")
+        return header
+
     def _build_ui(self):
         root = Gtk.Box(
             orientation=Gtk.Orientation.VERTICAL, spacing=10,
@@ -77,18 +122,34 @@ class NotifyWindow(Gtk.ApplicationWindow):
         )
         self.set_child(root)
 
+        # FASE1-CLOSE: el bloque de configuración global se agrupa en
+        # secciones con encabezado (General / Sonido) para dar coherencia
+        # visual sin recurrir a frames pesados.
+        root.append(self._section_header(i18n.t("section_general")))
+
+        # S5-r4: General vuelve a columna única (master, autostart e
+        # idioma uno bajo otro, como al principio); el Grid de 2 columnas
+        # (S5-r3) se elimina. La ayuda avanzada ya no vive aquí: se movió
+        # a la esquina inferior derecha (fila del daemon).
+        general_box = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=10,
+        )
+
         master_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        master_label = Gtk.Label(label="Sonido de notificaciones", hexpand=True, xalign=0)
+        master_label = Gtk.Label(
+            label=i18n.t("master_label"), hexpand=True, xalign=0
+        )
+        self.master_label = master_label
         self.master_switch = Gtk.Switch(active=bool(self.cfg.get("enabled", True)))
         self.master_switch.props.valign = Gtk.Align.CENTER
         self.master_switch.connect("notify::active", self._on_master_toggled)
         master_row.append(master_label)
         master_row.append(self.master_switch)
-        root.append(master_row)
+        general_box.append(master_row)
 
         autostart_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         autostart_label = Gtk.Label(
-            label="Iniciar con la sesión", hexpand=True, xalign=0
+            label=i18n.t("autostart_label"), hexpand=True, xalign=0
         )
         self.autostart_switch = Gtk.Switch(
             active=bool(config.autostart_enabled())
@@ -99,26 +160,56 @@ class NotifyWindow(Gtk.ApplicationWindow):
         )
         autostart_row.append(autostart_label)
         autostart_row.append(self.autostart_switch)
-        root.append(autostart_row)
+        general_box.append(autostart_row)
 
+        # ADR 0013: selector de idioma in-GUI. Los nombres de idioma son
+        # endónimos (cada idioma se nombra a sí mismo) y no se traducen.
+        language_row = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=10,
+        )
+        language_label = Gtk.Label(label=i18n.t("language_label"), xalign=0)
+        self.language_dropdown = Gtk.DropDown(
+            model=Gtk.StringList.new(["English", "Español"])
+        )
+        self.language_dropdown.props.valign = Gtk.Align.CENTER
+        self.language_dropdown.set_selected(
+            0 if i18n.get_language() == "en" else 1
+        )
+        self.language_dropdown.connect(
+            "notify::selected", self._on_language_changed
+        )
+        language_row.append(language_label)
+        language_row.append(self.language_dropdown)
+        general_box.append(language_row)
+
+        root.append(general_box)
+
+        root.append(Gtk.Separator())
+        root.append(self._section_header(i18n.t("section_sound")))
+
+        # S5-r3: "Añadir sonido propio..." comparte fila con el sonido
+        # global, separado del botón Probar por un margen extra (una fila
+        # menos de altura, sin que ambos botones parezcan un grupo).
         sound_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        sound_label = Gtk.Label(label="Sonido global:", xalign=0)
+        sound_label = Gtk.Label(label=i18n.t("sound_label"), xalign=0)
         self.sound_dropdown = Gtk.DropDown()
         self.sound_dropdown.connect("notify::selected", self._on_sound_changed)
-        test_button = Gtk.Button(label="Probar")
-        test_button.connect("clicked", self._on_test)
+        self.test_button = Gtk.Button(label=i18n.t("test_button"))
+        self.test_button.connect("clicked", self._on_test)
+        # S5-r4: separación triplicada (12 -> 36) entre "Probar" y
+        # "Añadir sonido propio..." para que no parezcan un grupo.
+        self.add_custom_button = Gtk.Button(label=i18n.t("add_custom_button"))
+        self.add_custom_button.set_margin_start(36)
+        self.add_custom_button.connect("clicked", self._on_add_custom)
         sound_row.append(sound_label)
         sound_row.append(self.sound_dropdown)
-        sound_row.append(test_button)
+        sound_row.append(self.test_button)
+        sound_row.append(self.add_custom_button)
         root.append(sound_row)
 
-        custom_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        add_button = Gtk.Button(label="Añadir sonido propio...")
-        add_button.connect("clicked", self._on_add_custom)
-        custom_row.append(add_button)
-        root.append(custom_row)
-
-        formats_label = Gtk.Label(label=FORMATS_HINT, xalign=0, wrap=True)
+        formats_label = Gtk.Label(
+            label=i18n.t("formats_hint"), xalign=0, wrap=True
+        )
         formats_label.add_css_class("dim-label")
         root.append(formats_label)
 
@@ -133,32 +224,46 @@ class NotifyWindow(Gtk.ApplicationWindow):
         custom_scroll.set_child(self.custom_box)
         root.append(custom_scroll)
 
-        self.no_dup_check = Gtk.CheckButton(
-            label="No repetir si la app ya envía su propio sonido "
-            "(desmarcado: se oirán ambos)"
+        # S5-r2: fila compacta sin espacio muerto: label + spin juntos a
+        # la izquierda, sin expandir.
+        debounce_row = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=10,
+            halign=Gtk.Align.START,
         )
-        self.no_dup_check.set_active(bool(self.cfg.get("no_duplicate", True)))
-        self.no_dup_check.connect("toggled", self._on_no_dup_toggled)
-        root.append(self.no_dup_check)
+        debounce_label = Gtk.Label(label=i18n.t("debounce_label"), xalign=0)
+        debounce_adjustment = Gtk.Adjustment(
+            value=float(self.cfg.get("debounce_window", 2.0)),
+            lower=0, upper=60, step_increment=0.5, page_increment=5, page_size=0,
+        )
+        self.debounce_spin = Gtk.SpinButton(
+            adjustment=debounce_adjustment, climb_rate=0, digits=1
+        )
+        self.debounce_spin.set_tooltip_text(i18n.t("debounce_tooltip"))
+        self.debounce_spin.props.valign = Gtk.Align.CENTER
+        self.debounce_spin.connect("value-changed", self._on_debounce_changed)
+        debounce_row.append(debounce_label)
+        debounce_row.append(self.debounce_spin)
+        root.append(debounce_row)
 
-        separator = Gtk.Separator()
-        root.append(separator)
+        root.append(Gtk.Separator())
 
         apps_header_row = Gtk.Box(
             orientation=Gtk.Orientation.HORIZONTAL, spacing=10
         )
-        apps_header = Gtk.Label(label="Aplicaciones", xalign=0, hexpand=True)
+        apps_header = Gtk.Label(label=i18n.t("apps_header"), xalign=0, hexpand=True)
         apps_header.add_css_class("heading")
-        self.reset_apps_button = Gtk.Button(label="Vaciar lista")
-        self.reset_apps_button.set_tooltip_text(
-            "Borra todas las apps detectadas y su configuración"
-        )
+        self.reset_apps_button = Gtk.Button(label=i18n.t("reset_apps_button"))
+        self.reset_apps_button.set_tooltip_text(i18n.t("reset_apps_tooltip"))
         self.reset_apps_button.props.valign = Gtk.Align.CENTER
         self.reset_apps_button.connect("clicked", self._on_reset_apps)
-        sort_label = Gtk.Label(label="Orden:", xalign=0)
+        sort_label = Gtk.Label(label=i18n.t("sort_label"), xalign=0)
         self.sort_dropdown = Gtk.DropDown(
             model=Gtk.StringList.new(
-                ["Por llegada", "Por nombre", "Por notificaciones"]
+                [
+                    i18n.t("sort_arrival"),
+                    i18n.t("sort_name"),
+                    i18n.t("sort_count"),
+                ]
             )
         )
         self.sort_dropdown.props.valign = Gtk.Align.CENTER
@@ -177,20 +282,155 @@ class NotifyWindow(Gtk.ApplicationWindow):
         scroll.set_child(self.apps_list)
         root.append(scroll)
 
+        # S5-r4: el botón de ayuda avanzada vive en la esquina inferior
+        # derecha de la ventana: misma fila que los botones del daemon,
+        # alineado al final (halign END) tras el estado que expande.
         daemon_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        self.start_button = Gtk.Button(label="Iniciar daemon")
+        self.start_button = Gtk.Button(label=i18n.t("start_daemon"))
         self.start_button.connect("clicked", self._on_start_daemon)
-        self.stop_button = Gtk.Button(label="Detener daemon")
+        self.stop_button = Gtk.Button(label=i18n.t("stop_daemon"))
         self.stop_button.connect("clicked", self._on_stop_daemon)
         self.state_label = Gtk.Label(label="", xalign=0, hexpand=True)
+        self.help_button = Gtk.Button(label=i18n.t("help_label"))
+        self.help_button.props.valign = Gtk.Align.CENTER
+        self.help_button.props.halign = Gtk.Align.END
+        self.help_button.connect("clicked", self._on_help_clicked)
         daemon_row.append(self.start_button)
         daemon_row.append(self.stop_button)
         daemon_row.append(self.state_label)
+        daemon_row.append(self.help_button)
         root.append(daemon_row)
 
         self._populate_apps()
         self._refresh_custom_list()
         self._rebuild_all_dropdowns()
+
+    def _build_help_window(self):
+        """Ventana flotante transitoria de ayuda avanzada (S5-r4).
+
+        Sustituye al popover (S5-r3): un popover no puede exceder el
+        ancho de la ventana (820 px) y el operador pidió un cuadro ~50 %
+        más ancho (900 px). Sigue el patrón del diálogo de reglas:
+        ventana transitoria con ~900 px de ancho, alto a contenido
+        (propagate_natural_height) con scroll solo si el contenido
+        excede el máximo razonable (700 px), destroy-with-parent y
+        cierre estándar (Escape y X, ambos nativos de Gtk.Window en
+        GTK4). Se construye bajo demanda en cada clic para que el idioma
+        activo sea siempre el actual; ``_on_help_clicked`` la ancla como
+        transitoria y la presenta.
+        """
+        window = Gtk.Window(title=i18n.t("help_window_title"))
+        window.set_destroy_with_parent(True)
+        window.set_default_size(900, -1)
+        content = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=8,
+            margin_top=8, margin_bottom=8, margin_start=10, margin_end=10,
+        )
+        scroll = Gtk.ScrolledWindow(
+            hscrollbar_policy=Gtk.PolicyType.NEVER,
+            vscrollbar_policy=Gtk.PolicyType.AUTOMATIC,
+        )
+        scroll.set_max_content_height(700)
+        scroll.set_max_content_width(900)
+        scroll.set_propagate_natural_height(True)
+        help_box = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=8,
+        )
+        help_done_heading = Gtk.Label(
+            label=i18n.t("help_done_heading"), xalign=0, wrap=True
+        )
+        help_done_heading.add_css_class("heading")
+        help_done_intro = Gtk.Label(
+            label=i18n.t("help_done_intro"), xalign=0, wrap=True
+        )
+        help_done_example1 = Gtk.Label(
+            label=i18n.t("help_done_example1"), xalign=0
+        )
+        help_done_example1.add_css_class("monospace")
+        help_done_example2 = Gtk.Label(
+            label=i18n.t("help_done_example2"), xalign=0
+        )
+        help_done_example2.add_css_class("monospace")
+        help_app_heading = Gtk.Label(
+            label=i18n.t("help_app_in_list_heading"), xalign=0, wrap=True
+        )
+        help_app_heading.add_css_class("heading")
+        help_app_body = Gtk.Label(
+            label=i18n.t("help_app_in_list_body"), xalign=0, wrap=True
+        )
+        help_features_heading = Gtk.Label(
+            label=i18n.t("help_advanced_features_heading"), xalign=0, wrap=True
+        )
+        help_features_heading.add_css_class("heading")
+        help_box.append(help_done_heading)
+        help_box.append(help_done_intro)
+        help_box.append(help_done_example1)
+        help_box.append(help_done_example2)
+        help_box.append(help_app_heading)
+        help_box.append(help_app_body)
+        help_box.append(help_features_heading)
+        for feature_key in (
+            "help_feature_volume",
+            "help_feature_rules",
+            "help_feature_debounce",
+            "help_feature_own_sound",
+        ):
+            feature_label = Gtk.Label(
+                label=i18n.t(feature_key), xalign=0, wrap=True
+            )
+            help_box.append(feature_label)
+        scroll.set_child(help_box)
+        content.append(scroll)
+        window.set_child(content)
+        return window
+
+    def _on_help_clicked(self, button):
+        """Abre la ventana flotante de ayuda avanzada (S5-r4).
+
+        Si ya hay una abierta se destruye y se crea una nueva: el
+        contenido siempre se construye con el idioma activo actual.
+        """
+        if self.help_window is not None:
+            self.help_window.destroy()
+        self.help_window = self._build_help_window()
+        self.help_window.set_transient_for(self)
+        self.help_window.present()
+
+    def _on_language_changed(self, dropdown, param):
+        """Aplica el cambio de idioma en caliente (ADR 0013).
+
+        Persiste la preferencia, cambia el idioma activo y reconstruye la
+        ventana para que todos los widgets se creen ya traducidos. La
+        reconstrucción conserva la selección de orden de la lista; el
+        resto del estado transitorio (scroll, popovers) se reabre al uso.
+        """
+        if self._rebuilding:
+            return
+        language = ("en", "es")[dropdown.get_selected()]
+        if language == i18n.get_language():
+            return
+        i18n.set_language(language)
+        self.cfg["language"] = language
+        self._save()
+        self._rebuild_ui()
+
+    def _rebuild_ui(self):
+        """Reconstruye la ventana con el idioma activo ya aplicado."""
+        sort_selection = 0
+        if self.sort_dropdown is not None:
+            sort_selection = self.sort_dropdown.get_selected()
+        # S5-r4: si la ventana de ayuda está abierta se destruye antes
+        # de reconstruir el árbol; no quedan ventanas huérfanas (la
+        # nueva se creará con el idioma activo en el próximo clic).
+        if getattr(self, "help_window", None) is not None:
+            self.help_window.destroy()
+            self.help_window = None
+        self.set_child(None)
+        self.app_rows = {}
+        self.custom_rows = {}
+        self._build_ui()
+        if self.sort_dropdown is not None:
+            self.sort_dropdown.set_selected(sort_selection)
 
     def _populate_apps(self):
         seen = config.load_state().get("apps_seen", [])
@@ -228,11 +468,25 @@ class NotifyWindow(Gtk.ApplicationWindow):
     def _ensure_app_row(self, app_name):
         if app_name in self.app_rows:
             return
-        app_cfg = self.cfg.get("apps", {}).get(app_name, {})
+        apps_cfg = self.cfg.get("apps", {})
+        app_cfg = apps_cfg.get(app_name, {})
+        # OWN-001: estado inicial del switch. Si el usuario ya configuro la
+        # app en config.json, se respeta su eleccion; si es nueva (primera
+        # vez o tras vaciar lista) y la app reproduce su propio sonido, el
+        # switch aparece desactivado por defecto (pero siempre editable).
+        meta = config.load_state().get("app_meta", {}).get(app_name, {})
+        has_own_sound = bool(meta.get("has_own_sound", False))
+        if app_name in apps_cfg:
+            switch_active = bool(app_cfg.get("enabled", True))
+        else:
+            switch_active = not has_own_sound
         row = Gtk.ListBoxRow()
         box = Gtk.Box(
-            orientation=Gtk.Orientation.HORIZONTAL, spacing=10,
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=8,
             margin_top=4, margin_bottom=4,
+        )
+        name_box = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=2, hexpand=True,
         )
         name_label = Gtk.Label(
             label=self._display_name(app_name),
@@ -240,41 +494,91 @@ class NotifyWindow(Gtk.ApplicationWindow):
             ellipsize=Pango.EllipsizeMode.END,
             tooltip_text=app_name,
         )
-        name_label.set_width_chars(28)
+        name_label.set_width_chars(24)
         name_label.set_max_width_chars(50)
+        # OWN-001: etiqueta/icono "Tiene sonido propio", visible siempre que
+        # la app reproduzca su propio sonido (informa, no bloquea).
+        own_sound_box = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=4, hexpand=True,
+        )
+        own_sound_box.set_tooltip_text(i18n.t("own_sound_tooltip"))
+        own_sound_icon = Gtk.Image(icon_name="audio-x-generic-symbolic")
+        own_sound_icon.props.valign = Gtk.Align.CENTER
+        own_sound_label = Gtk.Label(
+            label=i18n.t("own_sound_label"), xalign=0
+        )
+        own_sound_label.add_css_class("dim-label")
+        own_sound_label.props.valign = Gtk.Align.CENTER
+        own_sound_box.append(own_sound_icon)
+        own_sound_box.append(own_sound_label)
+        own_sound_box.set_visible(has_own_sound)
+        name_box.append(name_label)
+        name_box.append(own_sound_box)
         app_sound_dropdown = Gtk.DropDown()
         app_sound_dropdown.props.valign = Gtk.Align.CENTER
         app_sound_dropdown.connect(
             "notify::selected", self._on_app_sound_changed, app_name
         )
+        volume_adjustment = Gtk.Adjustment(
+            value=app_cfg.get("volume", 100), lower=0, upper=100,
+            step_increment=1, page_increment=10, page_size=0,
+        )
+        volume_scale = Gtk.Scale(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            adjustment=volume_adjustment,
+        )
+        volume_scale.set_tooltip_text(i18n.t("volume_tooltip"))
+        volume_scale.props.valign = Gtk.Align.CENTER
+        volume_scale.set_hexpand(False)
+        volume_scale.set_size_request(110, -1)
+        # S5-r2: el valor numérico del volumen vive en un label pequeño
+        # junto al slider (dibujarlo sobre el slider aumentaba la altura
+        # de la fila). Se actualiza en value-changed.
+        volume_value_label = Gtk.Label(
+            label=str(round(volume_adjustment.get_value())),
+            width_chars=3, xalign=0,
+        )
+        volume_value_label.props.valign = Gtk.Align.CENTER
+        volume_value_label.add_css_class("dim-label")
+        volume_scale.connect(
+            "value-changed", self._on_app_volume_changed, app_name
+        )
         app_test_button = Gtk.Button()
         app_test_button.set_icon_name("media-playback-start-symbolic")
-        app_test_button.set_tooltip_text("Probar")
+        app_test_button.set_tooltip_text(i18n.t("test_tooltip"))
         app_test_button.props.valign = Gtk.Align.CENTER
         app_test_button.connect("clicked", self._on_test_app, app_name)
         rename_button = Gtk.Button()
         rename_button.set_icon_name("document-edit-symbolic")
-        rename_button.set_tooltip_text("Renombrar")
+        rename_button.set_tooltip_text(i18n.t("rename_tooltip"))
         rename_button.props.valign = Gtk.Align.CENTER
         rename_button.connect("clicked", self._on_app_rename, app_name)
         info_button = Gtk.Button()
         info_button.set_icon_name("dialog-information-symbolic")
-        info_button.set_tooltip_text("Información")
+        info_button.set_tooltip_text(i18n.t("info_tooltip"))
         info_button.props.valign = Gtk.Align.CENTER
         info_button.connect("clicked", self._on_app_info, app_name)
-        app_switch = Gtk.Switch(active=bool(app_cfg.get("enabled", True)))
+        rules_button = Gtk.Button()
+        rules_button.set_icon_name("view-list-symbolic")
+        rules_button.set_tooltip_text(i18n.t("rules_tooltip"))
+        rules_button.props.valign = Gtk.Align.CENTER
+        rules_button.connect("clicked", self._on_app_rules, app_name)
+        app_switch = Gtk.Switch(active=switch_active)
         app_switch.props.valign = Gtk.Align.CENTER
         app_switch.connect("notify::active", self._on_app_toggled, app_name)
         remove_button = Gtk.Button()
         remove_button.set_icon_name("user-trash-symbolic")
-        remove_button.set_tooltip_text("Eliminar de la lista")
+        remove_button.set_tooltip_text(i18n.t("remove_tooltip"))
         remove_button.props.valign = Gtk.Align.CENTER
         remove_button.connect("clicked", self._on_app_remove, app_name)
-        box.append(name_label)
+        box.append(name_box)
         box.append(app_sound_dropdown)
+        box.append(volume_scale)
+        box.append(volume_value_label)
         box.append(app_test_button)
         box.append(rename_button)
         box.append(info_button)
+        box.append(rules_button)
         box.append(app_switch)
         box.append(remove_button)
         row.set_child(box)
@@ -283,7 +587,11 @@ class NotifyWindow(Gtk.ApplicationWindow):
             "row": row,
             "switch": app_switch,
             "dropdown": app_sound_dropdown,
+            "volume_scale": volume_scale,
+            "volume_label": volume_value_label,
             "name_label": name_label,
+            "own_sound_box": own_sound_box,
+            "rules_button": rules_button,
         }
         self._populate_app_dropdown(app_name, self.app_rows[app_name])
 
@@ -293,7 +601,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
         self._rebuilding = True
         try:
             entry["dropdown"].set_model(
-                Gtk.StringList.new([INHERITED] + displays)
+                Gtk.StringList.new([i18n.t("inherited")] + displays)
             )
             app_sound = self.cfg.get("apps", {}).get(app_name, {}).get("sound")
             app_index = self._choice_index(app_sound)
@@ -324,8 +632,8 @@ class NotifyWindow(Gtk.ApplicationWindow):
             actions = Gtk.Box(
                 orientation=Gtk.Orientation.HORIZONTAL, spacing=8, halign=Gtk.Align.END,
             )
-            save_button = Gtk.Button(label="Guardar")
-            reset_button = Gtk.Button(label="Restablecer")
+            save_button = Gtk.Button(label=i18n.t("save_button"))
+            reset_button = Gtk.Button(label=i18n.t("reset_button"))
             save_button.connect(
                 "clicked", self._on_app_rename_save, app_name, text_entry, popover
             )
@@ -386,8 +694,8 @@ class NotifyWindow(Gtk.ApplicationWindow):
                 orientation=Gtk.Orientation.HORIZONTAL, spacing=8,
                 halign=Gtk.Align.END,
             )
-            confirm_button = Gtk.Button(label="Fusionar")
-            cancel_button = Gtk.Button(label="Cancelar")
+            confirm_button = Gtk.Button(label=i18n.t("merge_confirm"))
+            cancel_button = Gtk.Button(label=i18n.t("cancel_button"))
             confirm_button.add_css_class("destructive-action")
             confirm_button.connect(
                 "clicked", self._on_merge_confirm, source, target, popover
@@ -402,10 +710,13 @@ class NotifyWindow(Gtk.ApplicationWindow):
             entry_store["merge_popover"] = popover
             entry_store["merge_message"] = message
         entry_store["merge_message"].set_text(
-            f"El alias «{alias}» ya lo usa «{owner_display}».\n"
-            f"¿Fusionar? Se eliminará «{source_display}», sus "
-            f"notificaciones futuras se atribuirán a «{owner_display}» y "
-            f"«{source}» se añadirá como sinónimo."
+            i18n.t(
+                "merge_message",
+                alias=alias,
+                owner_display=owner_display,
+                source_display=source_display,
+                source=source,
+            )
         )
         popover.popup()
 
@@ -428,6 +739,8 @@ class NotifyWindow(Gtk.ApplicationWindow):
             target_cfg["enabled"] = False
         if target_cfg.get("sound") is None and source_cfg.get("sound") is not None:
             target_cfg["sound"] = source_cfg["sound"]
+        if "volume" not in target_cfg and "volume" in source_cfg:
+            target_cfg["volume"] = source_cfg["volume"]
         synonyms = list(target_cfg.get("synonyms") or [])
         if source not in synonyms:
             synonyms.append(source)
@@ -474,6 +787,425 @@ class NotifyWindow(Gtk.ApplicationWindow):
         if entry is not None:
             self.apps_list.remove(entry["row"])
 
+    def _get_app_rules(self, app_name):
+        """Devuelve la lista de reglas de una app (RULE-001)."""
+        app_cfg = self.cfg.get("apps", {}).get(app_name)
+        if not isinstance(app_cfg, dict):
+            return []
+        rules = app_cfg.get("rules")
+        return rules if isinstance(rules, list) else []
+
+    def _set_app_rules(self, app_name, rules):
+        """Guarda la lista de reglas en la config de la app.
+
+        Una lista vacia elimina la clave ``rules`` (mismo criterio que
+        ``_normalize_app`` en config.py).
+        """
+        app_cfg = self.cfg.setdefault("apps", {}).setdefault(
+            app_name, {"enabled": True, "sound": None}
+        )
+        if rules:
+            app_cfg["rules"] = rules
+        else:
+            app_cfg.pop("rules", None)
+
+    def _normalize_rule_value(self, field, op, value):
+        """Convierte el valor de una regla a int para eq+urgency (0/1/2).
+
+        Cualquier otro caso devuelve el valor como string; un valor
+        invalido para eq+urgency se guarda como string y no matcheara
+        (el usuario lo corrige).
+        """
+        if op == "eq" and field == "urgency":
+            try:
+                parsed = int(value)
+            except (TypeError, ValueError):
+                parsed = None
+            if parsed in (0, 1, 2):
+                return parsed
+        return str(value)
+
+    def _set_app_rule(self, app_name, index, field, op, value, action, sound):
+        """Actualiza la regla en ``index`` y persiste (RULE-001)."""
+        rules = self._get_app_rules(app_name)
+        if not 0 <= index < len(rules):
+            return
+        rule = rules[index]
+        rule["match"] = {
+            "field": field,
+            "op": op,
+            "value": self._normalize_rule_value(field, op, value),
+        }
+        rule["action"] = action
+        if action == "sound":
+            rule["sound"] = sound
+        else:
+            rule.pop("sound", None)
+        self._save()
+
+    def _add_app_rule(self, app_name):
+        """Añade una regla default a la app y persiste (RULE-001).
+
+        Respeta ``config.MAX_RULES``: si la app ya tiene el maximo, no
+        se añade nada.
+        """
+        rules = self._get_app_rules(app_name)
+        if len(rules) >= config.MAX_RULES:
+            return
+        choices = self._choices()
+        default_sound = choices[0][1] if choices else None
+        rules.append(
+            {
+                "match": {"field": "body", "op": "contains", "value": ""},
+                "action": "sound",
+                "sound": default_sound,
+            }
+        )
+        self._set_app_rules(app_name, rules)
+        self._save()
+
+    def _remove_app_rule(self, app_name, index):
+        """Elimina la regla en ``index`` y persiste (RULE-001)."""
+        rules = self._get_app_rules(app_name)
+        if not 0 <= index < len(rules):
+            return
+        del rules[index]
+        self._set_app_rules(app_name, rules)
+        self._save()
+
+    def _move_app_rule(self, app_name, source_index, target_index):
+        """Mueve la regla de ``source_index`` a ``target_index`` y persiste.
+
+        El orden importa: la primera regla que matchea gana (RULE-001).
+        Indices invalidos o un movimiento sin cambio no guardan nada.
+        """
+        rules = self._get_app_rules(app_name)
+        if not 0 <= source_index < len(rules):
+            return
+        if not 0 <= target_index < len(rules):
+            return
+        if source_index == target_index:
+            return
+        rules.insert(target_index, rules.pop(source_index))
+        self._set_app_rules(app_name, rules)
+        self._save()
+
+    def _rule_field_index(self, field):
+        for index, (value, _) in enumerate(rule_fields()):
+            if value == field:
+                return index
+        return 0
+
+    def _rule_op_index(self, op):
+        for index, (value, _) in enumerate(rule_ops()):
+            if value == op:
+                return index
+        return 0
+
+    def _rule_action_index(self, action):
+        for index, (value, _) in enumerate(rule_actions()):
+            if value == action:
+                return index
+        return 0
+
+    def _on_app_rules(self, button, app_name):
+        """Abre el diálogo de reglas por contenido de una app (RULE-001)."""
+        dialog = Gtk.Window(
+            title=i18n.t("rules_dialog_title", name=self._display_name(app_name))
+        )
+        dialog.set_transient_for(self)
+        dialog.set_modal(True)
+        dialog.set_default_size(680, 480)
+        root = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=10,
+            margin_top=12, margin_bottom=12, margin_start=14, margin_end=14,
+        )
+        dialog.set_child(root)
+        rules_box = Gtk.ListBox()
+        rules_box.set_selection_mode(Gtk.SelectionMode.NONE)
+        scroll = Gtk.ScrolledWindow(vexpand=True)
+        scroll.set_child(rules_box)
+        root.append(scroll)
+        actions = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=8,
+            halign=Gtk.Align.END,
+        )
+        add_button = Gtk.Button(label=i18n.t("add_rule_button"))
+        add_button.connect(
+            "clicked", self._on_rules_add_clicked, app_name, rules_box
+        )
+        close_button = Gtk.Button(label=i18n.t("close_button"))
+        close_button.connect("clicked", lambda *_: dialog.close())
+        actions.append(add_button)
+        actions.append(close_button)
+        root.append(actions)
+        self._rebuild_rules_list(app_name, rules_box)
+        dialog.present()
+
+    def _on_rules_add_clicked(self, button, app_name, rules_box):
+        self._add_app_rule(app_name)
+        self._rebuild_rules_list(app_name, rules_box)
+
+    def _rebuild_rules_list(self, app_name, rules_box):
+        for child in list(rules_box):
+            rules_box.remove(child)
+        for rule in self._get_app_rules(app_name):
+            rules_box.append(self._build_rule_row(app_name, rule, rules_box))
+
+    def _build_rule_row(self, app_name, rule, rules_box):
+        row = Gtk.ListBoxRow()
+        container = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=4,
+            margin_top=4, margin_bottom=4,
+        )
+        handle = Gtk.Image(icon_name="list-drag-handle-symbolic")
+        handle.props.valign = Gtk.Align.CENTER
+        drag_handle = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        drag_handle.set_size_request(24, -1)
+        drag_handle.props.valign = Gtk.Align.CENTER
+        drag_handle.set_tooltip_text(i18n.t("drag_handle_tooltip"))
+        drag_handle.append(handle)
+        row_box = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=6,
+        )
+        row_box.append(drag_handle)
+        row_box.append(container)
+        match = rule.get("match", {})
+        field = match.get("field", "body")
+        op = match.get("op", "contains")
+        value = match.get("value", "")
+        action = rule.get("action", "sound")
+        sound = rule.get("sound")
+        field_label = Gtk.Label(label=i18n.t("rule_field_label"), xalign=0)
+        field_dropdown = Gtk.DropDown(
+            model=Gtk.StringList.new([label for _, label in rule_fields()])
+        )
+        field_dropdown.set_selected(self._rule_field_index(field))
+        op_label = Gtk.Label(label=i18n.t("rule_op_label"), xalign=0)
+        op_dropdown = Gtk.DropDown(
+            model=Gtk.StringList.new([label for _, label in rule_ops()])
+        )
+        op_dropdown.set_selected(self._rule_op_index(op))
+        value_label = Gtk.Label(label=i18n.t("rule_value_label"), xalign=0)
+        value_entry = Gtk.Entry(text=str(value), width_chars=16)
+        urgency_dropdown = Gtk.DropDown(
+            model=Gtk.StringList.new(
+                [
+                    i18n.t("urgency_low"),
+                    i18n.t("urgency_normal"),
+                    i18n.t("urgency_critical"),
+                ]
+            )
+        )
+        urgency_dropdown.set_selected(self._urgency_index(value))
+        is_urgency = field == "urgency"
+        value_entry.set_visible(not is_urgency)
+        urgency_dropdown.set_visible(is_urgency)
+        if is_urgency:
+            # Urgencia solo admite "Igual" (eq): desactivar el desplegable
+            # de Operador y forzar la seleccion (RULE-001).
+            op_dropdown.set_sensitive(False)
+            op_dropdown.set_selected(self._rule_op_index("eq"))
+        match_line = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=6,
+        )
+        match_line.append(field_label)
+        match_line.append(field_dropdown)
+        match_line.append(op_label)
+        match_line.append(op_dropdown)
+        match_line.append(value_label)
+        match_line.append(value_entry)
+        match_line.append(urgency_dropdown)
+        container.append(match_line)
+        action_label = Gtk.Label(label=i18n.t("rule_action_label"), xalign=0)
+        action_dropdown = Gtk.DropDown(
+            model=Gtk.StringList.new([label for _, label in rule_actions()])
+        )
+        action_dropdown.set_selected(self._rule_action_index(action))
+        sound_label = Gtk.Label(label=i18n.t("rule_sound_label"), xalign=0)
+        sound_dropdown = Gtk.DropDown(
+            model=Gtk.StringList.new(
+                [display for display, _ in self._choices()]
+            )
+        )
+        sound_index = self._choice_index(sound)
+        sound_dropdown.set_selected(0 if sound_index is None else sound_index)
+        sound_dropdown.set_visible(action == "sound")
+        delete_button = Gtk.Button()
+        delete_button.set_icon_name("user-trash-symbolic")
+        delete_button.set_tooltip_text(i18n.t("delete_rule_tooltip"))
+        delete_button.props.valign = Gtk.Align.CENTER
+        action_line = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=6,
+        )
+        action_line.append(action_label)
+        action_line.append(action_dropdown)
+        action_line.append(sound_label)
+        action_line.append(sound_dropdown)
+        action_line.append(delete_button)
+        container.append(action_line)
+        widgets = {
+            "row": row,
+            "handle": drag_handle,
+            "field": field_dropdown,
+            "op": op_dropdown,
+            "value": value_entry,
+            "urgency": urgency_dropdown,
+            "action": action_dropdown,
+            "sound": sound_dropdown,
+            "field_value": field,
+        }
+        row.widgets = widgets
+        field_dropdown.connect(
+            "notify::selected",
+            lambda *_: self._on_rule_changed(app_name, widgets),
+        )
+        op_dropdown.connect(
+            "notify::selected",
+            lambda *_: self._on_rule_changed(app_name, widgets),
+        )
+        value_entry.connect(
+            "changed",
+            lambda *_: self._on_rule_changed(app_name, widgets),
+        )
+        urgency_dropdown.connect(
+            "notify::selected",
+            lambda *_: self._on_rule_changed(app_name, widgets),
+        )
+        action_dropdown.connect(
+            "notify::selected",
+            lambda *_: self._on_rule_changed(app_name, widgets),
+        )
+        sound_dropdown.connect(
+            "notify::selected",
+            lambda *_: self._on_rule_changed(app_name, widgets),
+        )
+        delete_button.connect(
+            "clicked",
+            lambda *_: self._on_rule_delete_clicked(
+                app_name, widgets, rules_box
+            ),
+        )
+        drag_source = Gtk.DragSource()
+        drag_source.set_actions(Gdk.DragAction.MOVE)
+        drag_source.connect("prepare", self._on_rule_drag_prepare)
+        # El DragSource vive en el handle, no en el row: los widgets
+        # interactivos (DropDown, Entry, Button) capturan el press y
+        # bloquearian el drag si estuviera en la fila completa.
+        drag_handle.add_controller(drag_source)
+        drop_target = Gtk.DropTarget.new(GObject.TYPE_INT, Gdk.DragAction.MOVE)
+        drop_target.connect("drop", self._on_rule_drop, app_name, rules_box)
+        row.add_controller(drop_target)
+        row.set_child(row_box)
+        return row
+
+    def _on_rule_drag_prepare(self, source, x, y):
+        """Empaqueta el indice de la fila origen al iniciar el drag (RULE-001).
+
+        El DragSource vive en el handle de arrastre; se sube por la
+        jerarquia de widgets hasta la ListBoxRow para obtener el indice.
+        """
+        widget = source.get_widget()
+        while widget is not None and not isinstance(widget, Gtk.ListBoxRow):
+            widget = widget.get_parent()
+        if widget is None:
+            return None
+        value = GObject.Value(GObject.TYPE_INT, widget.get_index())
+        return Gdk.ContentProvider.new_for_value(value)
+
+    def _on_rule_drop(self, target, value, x, y, app_name, rules_box):
+        """Reordena la regla arrastrada al indice de la fila destino (RULE-001)."""
+        if isinstance(value, GObject.Value):
+            source_index = value.get_int()
+        else:
+            source_index = int(value)
+        row = target.get_widget()
+        target_index = row.get_index()
+        if source_index == target_index:
+            return False
+        self._move_app_rule(app_name, source_index, target_index)
+        self._rebuild_rules_list(app_name, rules_box)
+        return True
+
+    def _rule_row_values(self, widgets):
+        field = rule_fields()[widgets["field"].get_selected()][0]
+        op = rule_ops()[widgets["op"].get_selected()][0]
+        if field == "urgency":
+            value = widgets["urgency"].get_selected()
+        else:
+            value = widgets["value"].get_text()
+        action = rule_actions()[widgets["action"].get_selected()][0]
+        sound = None
+        if action == "sound":
+            sound = self._choice_value(widgets["sound"].get_selected())
+        return field, op, value, action, sound
+
+    def _urgency_index(self, value):
+        """Indice del dropdown de urgencia para un valor de regla.
+
+        Acepta int o string "0"/"1"/"2"; cualquier otro valor cae en
+        "Normal" (1) como default.
+        """
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            parsed = None
+        if parsed in (0, 1, 2):
+            return parsed
+        return 1
+
+    def _sync_rule_value_widget(self, app_name, index, widgets, field):
+        """Sincroniza el widget de Valor visible con el valor previo de la
+        regla cuando cambia el Campo (RULE-001).
+
+        urgency -> dropdown con la opcion correspondiente (default
+        "Normal"); resto -> entry con el valor como string.
+        """
+        rules = self._get_app_rules(app_name)
+        if not 0 <= index < len(rules):
+            return
+        prev_value = rules[index].get("match", {}).get("value", "")
+        if field == "urgency":
+            widgets["value"].set_visible(False)
+            widgets["urgency"].set_visible(True)
+            widgets["urgency"].set_selected(self._urgency_index(prev_value))
+        else:
+            widgets["urgency"].set_visible(False)
+            widgets["value"].set_visible(True)
+            widgets["value"].set_text(str(prev_value))
+
+    def _sync_rule_op_widget(self, widgets, field):
+        """Sincroniza el desplegable de Operador con el Campo (RULE-001).
+
+        Para urgency el unico operador valido es "Igual" (eq): el
+        desplegable se desactiva y se fuerza la seleccion. Para el resto
+        se reactiva con las 5 opciones.
+        """
+        if field == "urgency":
+            widgets["op"].set_sensitive(False)
+            widgets["op"].set_selected(self._rule_op_index("eq"))
+        else:
+            widgets["op"].set_sensitive(True)
+
+    def _on_rule_changed(self, app_name, widgets):
+        index = widgets["row"].get_index()
+        field, op, value, action, sound = self._rule_row_values(widgets)
+        if field != widgets.get("field_value"):
+            # El campo cambio: marcar el nuevo campo antes de sincronizar
+            # para que las senales anidadas (changed/notify::selected) no
+            # vuelvan a entrar en la sincronizacion.
+            widgets["field_value"] = field
+            self._sync_rule_value_widget(app_name, index, widgets, field)
+            self._sync_rule_op_widget(widgets, field)
+            field, op, value, action, sound = self._rule_row_values(widgets)
+        self._set_app_rule(app_name, index, field, op, value, action, sound)
+        widgets["sound"].set_visible(action == "sound")
+
+    def _on_rule_delete_clicked(self, app_name, widgets, rules_box):
+        index = widgets["row"].get_index()
+        self._remove_app_rule(app_name, index)
+        self._rebuild_rules_list(app_name, rules_box)
+
     def _on_app_info(self, button, app_name):
         entry_store = self.app_rows[app_name]
         popover = entry_store.get("info_popover")
@@ -504,7 +1236,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
         if not synonyms:
             return
         header = Gtk.Label(
-            label="Sinónimos (pulsa Restaurar para separar):",
+            label=i18n.t("synonyms_header"),
             xalign=0, halign=Gtk.Align.START,
         )
         header.add_css_class("dim-label")
@@ -517,7 +1249,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
                 label=syn, xalign=0, hexpand=True,
                 ellipsize=Pango.EllipsizeMode.END, tooltip_text=syn,
             )
-            restore_button = Gtk.Button(label="Restaurar")
+            restore_button = Gtk.Button(label=i18n.t("restore_button"))
             restore_button.props.valign = Gtk.Align.CENTER
             restore_button.connect(
                 "clicked", self._on_synonym_restore, app_name, syn
@@ -565,17 +1297,13 @@ class NotifyWindow(Gtk.ApplicationWindow):
         message = Gtk.Label(
             wrap=True, xalign=0, max_width_chars=44,
         )
-        message.set_text(
-            "¿Vaciar la lista de aplicaciones detectadas y su configuración "
-            "por-app? Se borrarán todos los renombrados, sinónimos y contadores. "
-            "Las apps se volverán a detectar al recibir notificaciones."
-        )
+        message.set_text(i18n.t("reset_confirm_message"))
         actions = Gtk.Box(
             orientation=Gtk.Orientation.HORIZONTAL, spacing=8,
             halign=Gtk.Align.END,
         )
-        confirm_button = Gtk.Button(label="Vaciar lista")
-        cancel_button = Gtk.Button(label="Cancelar")
+        confirm_button = Gtk.Button(label=i18n.t("reset_confirm_button"))
+        cancel_button = Gtk.Button(label=i18n.t("cancel_button"))
         confirm_button.add_css_class("destructive-action")
         confirm_button.connect("clicked", self._on_reset_apps_confirm, popover)
         cancel_button.connect("clicked", self._on_reset_apps_cancel, popover)
@@ -610,26 +1338,36 @@ class NotifyWindow(Gtk.ApplicationWindow):
         last_seen = meta.get("last_seen")
         display = self._display_name(app_name)
         has_meta = bool(meta)
-        lines = [f"Nombre de notificación: {app_name}"]
+        lines = [i18n.t("info_notification_name", app_name=app_name)]
         if display != app_name:
-            lines.append(f"Mostrado como: {display}")
-        lines.append(f"Proceso emisor: {comm or '—'}")
-        lines.append(f"Número de sinónimos: {len(synonyms)}")
-        lines.append(f"Notificaciones: {seen_count if seen_count else '—'}")
+            lines.append(i18n.t("info_displayed_as", display=display))
+        lines.append(i18n.t("info_sender_process", comm=comm or "—"))
+        lines.append(
+            i18n.t(
+                "info_own_sound",
+                value=(
+                    i18n.t("info_yes")
+                    if meta.get("has_own_sound")
+                    else i18n.t("info_no")
+                ),
+            )
+        )
+        lines.append(i18n.t("info_synonym_count", count=len(synonyms)))
+        lines.append(
+            i18n.t(
+                "info_notification_count",
+                count=seen_count if seen_count else "—",
+            )
+        )
         if last_seen:
             stamp = datetime.fromtimestamp(last_seen).strftime(
                 "%Y-%m-%d %H:%M"
             )
         else:
             stamp = "—"
-        lines.append(f"Última vista: {stamp}")
+        lines.append(i18n.t("info_last_seen", stamp=stamp))
         if not has_meta:
-            lines.append(
-                "Esta aplicación se detectó antes de la v0.1.9; aún no"
-                " se ha observado ninguna notificación suya con el daemon"
-                " actual. Al recibirla se rellenarán proceso, contador y"
-                " última vista."
-            )
+            lines.append(i18n.t("info_legacy_note"))
         return "\n".join(lines)
 
     def _rebuild_all_dropdowns(self):
@@ -642,7 +1380,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
         )
         for app_name, entry in self.app_rows.items():
             entry["dropdown"].set_model(
-                Gtk.StringList.new([INHERITED] + displays)
+                Gtk.StringList.new([i18n.t("inherited")] + displays)
             )
             app_sound = self.cfg.get("apps", {}).get(app_name, {}).get("sound")
             app_index = self._choice_index(app_sound)
@@ -667,7 +1405,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
                 ellipsize=Pango.EllipsizeMode.END,
             )
             label.set_max_width_chars(40)
-            remove_button = Gtk.Button(label="Quitar")
+            remove_button = Gtk.Button(label=i18n.t("remove_custom_button"))
             remove_button.props.valign = Gtk.Align.CENTER
             remove_button.connect("clicked", self._on_remove_custom, path)
             box.append(label)
@@ -681,6 +1419,7 @@ class NotifyWindow(Gtk.ApplicationWindow):
         for entry in self.app_rows.values():
             entry["switch"].set_sensitive(enabled)
             entry["dropdown"].set_sensitive(enabled)
+            entry["volume_scale"].set_sensitive(enabled)
 
     def _refresh_state(self):
         running = config.is_running()
@@ -690,10 +1429,20 @@ class NotifyWindow(Gtk.ApplicationWindow):
             if app_name not in self.app_rows:
                 self._ensure_app_row(app_name)
                 added = True
+        # OWN-001: visibilidad de la etiqueta "Tiene sonido propio" en vivo
+        # para apps ya existentes cuando has_own_sound cambie en state.json.
+        app_meta = state.get("app_meta", {})
+        for app_name, entry in self.app_rows.items():
+            own_sound_box = entry.get("own_sound_box")
+            if own_sound_box is not None:
+                meta = app_meta.get(app_name, {})
+                own_sound_box.set_visible(
+                    bool(meta.get("has_own_sound", False))
+                )
         if added and self.sort_dropdown is not None:
             self._reorder_apps(self.sort_dropdown.get_selected())
         self.state_label.set_text(
-            "Daemon: en ejecución" if running else "Daemon: detenido"
+            i18n.t("daemon_running") if running else i18n.t("daemon_stopped")
         )
         self.start_button.set_sensitive(not running)
         self.stop_button.set_sensitive(running)
@@ -731,9 +1480,9 @@ class NotifyWindow(Gtk.ApplicationWindow):
             player.play_choice(value)
 
     def _on_add_custom(self, button):
-        dialog = Gtk.FileDialog(title="Elegir archivo de sonido")
+        dialog = Gtk.FileDialog(title=i18n.t("choose_sound_file"))
         audio_filter = Gtk.FileFilter()
-        audio_filter.set_name("Audio")
+        audio_filter.set_name(i18n.t("audio_filter"))
         audio_filter.add_mime_type("audio/*")
         dialog.set_default_filter(audio_filter)
         dialog.open(self, None, self._on_add_custom_done)
@@ -765,8 +1514,8 @@ class NotifyWindow(Gtk.ApplicationWindow):
         self._refresh_custom_list()
         self._rebuild_all_dropdowns()
 
-    def _on_no_dup_toggled(self, check):
-        self.cfg["no_duplicate"] = check.get_active()
+    def _on_debounce_changed(self, spin):
+        self.cfg["debounce_window"] = float(spin.get_value())
         self._save()
 
     def _on_app_toggled(self, switch, param, app_name):
@@ -789,11 +1538,25 @@ class NotifyWindow(Gtk.ApplicationWindow):
             entry["sound"] = self._choice_value(selected - 1)
         self._save()
 
+    def _on_app_volume_changed(self, scale, app_name):
+        if self._rebuilding:
+            return
+        entry = self.cfg["apps"].setdefault(
+            app_name, {"enabled": True, "sound": None}
+        )
+        entry["volume"] = round(scale.get_value())
+        self._save()
+        # S5-r2: el label del valor numérico junto al slider se mantiene
+        # sincronizado con el valor actual.
+        label = self.app_rows.get(app_name, {}).get("volume_label")
+        if label is not None:
+            label.set_text(str(round(scale.get_value())))
+
     def _on_test_app(self, button, app_name):
         app_cfg = self.cfg.get("apps", {}).get(app_name, {})
         choice = app_cfg.get("sound") or self.cfg.get("sound")
         if choice:
-            player.play_choice(choice)
+            player.play_choice(choice, volume=app_cfg.get("volume", 100))
 
     def _on_start_daemon(self, button):
         _spawn([sys.executable, _entrypoint(), "--daemon"])

@@ -25,6 +25,7 @@ _MESSAGE_HEADER_RE = re.compile(
     r"^(?:method call|signal|method return|error)\b"
 )
 _TOP_LEVEL_INT32_RE = re.compile(r"^ {3}int32[ \t]+[-+]?\d+[ \t]*$")
+_VARIANT_BYTE_RE = re.compile(r"^[-+]?\d+")
 _SENDER_RE = re.compile(r"\bsender=(:[0-9]+\.[0-9]+)")
 _SENDER_VALUE_RE = re.compile(r"^:[0-9]+\.[0-9]+$")
 _DBUS_PID_RE = re.compile(r"^\s*uint32\s+(\d+)\s*$")
@@ -40,6 +41,10 @@ _GENERIC_COMMS = {
 }
 
 _sender_cache = {}
+# Cache de regex compiladas para reglas RULE-001 (op "regex"). Sin
+# límite: las regex están acotadas por MAX_RULES por app y la cache
+# reutiliza el pattern compilado entre evaluaciones de la misma regla.
+_regex_cache = {}
 
 
 def _parse_sender(lines):
@@ -157,14 +162,16 @@ def _dbus_tokens(lines):
     """Yield structural dict markers and decoded dbus-monitor strings.
 
     Tokens emitted:
-      ("dict", None)                 -- start of a dict entry (a hint pair)
-      ("string", value)              -- a bare ``string "..."`` argument
-      ("variant_string", value)       -- a ``variant string "..."`` argument
+      ("dict", None)                -- start of a dict entry (a hint pair)
+      ("string", value)             -- a bare ``string "..."`` argument
+      ("variant_string", value)     -- a ``variant string "..."`` argument
       ("variant_array_string", value) -- a ``variant array string "..."`` item
+      ("variant_byte", value)       -- a ``variant byte N`` argument (int)
 
     The variant tokens let callers read hint *values* (e.g. the
-    ``desktop-entry`` hint) without re-introducing column/blank-line based
-    framing: quoted content is still tracked with the same state machine.
+    ``desktop-entry`` hint or the ``urgency`` byte) without re-introducing
+    column/blank-line based framing: quoted content is still tracked with
+    the same state machine.
     """
     in_string = False
     escaped = False
@@ -209,6 +216,26 @@ def _dbus_tokens(lines):
                 in_string = True
                 _pending_string_kind = "variant_string"
                 position += len('variant string "')
+            elif line.startswith("variant", position):
+                # dbus-monitor alinea los tipos a una columna fija:
+                # entre `variant` y `byte` puede haber varios espacios
+                # (p. ej. `variant             byte 2`).
+                ws = position + len("variant")
+                while ws < len(line) and line[ws] in " \t":
+                    ws += 1
+                if line.startswith("byte ", ws):
+                    rest = line[ws + len("byte "):]
+                    match = _VARIANT_BYTE_RE.match(rest)
+                    if match:
+                        try:
+                            yield "variant_byte", int(match.group(0))
+                        except ValueError:
+                            pass
+                        position = ws + len("byte ") + len(match.group(0))
+                    else:
+                        position = ws + len("byte ")
+                else:
+                    position += 1
             elif line.startswith('string "', position):
                 in_string = True
                 _pending_string_kind = "string"
@@ -223,14 +250,25 @@ def _parse_block(lines):
     hints = set()
     hint_key = None
     desktop_entry = None
+    urgency = None
     expecting_hint = False
+    top_strings = []
+    in_top_strings = True
     for token_type, value in _dbus_tokens(lines):
         if token_type == "dict":
             expecting_hint = True
             hint_key = None
+            in_top_strings = False
         elif token_type == "string":
-            if app_name is None:
-                app_name = value
+            if in_top_strings:
+                # Strings top-level antes del primer dict entry: en el
+                # método Notify son [app_name, app_icon, summary, body]
+                # (replaces_id es uint32 y no emite token). En
+                # AddNotification (GTK) son [app, id]: summary y body
+                # quedan None. Solo viven en memoria (ADR 0007).
+                top_strings.append(value)
+                if app_name is None:
+                    app_name = value
             elif expecting_hint and hint_key is None:
                 hint_key = value
                 hints.add(value)
@@ -238,7 +276,75 @@ def _parse_block(lines):
             if desktop_entry is None:
                 desktop_entry = value
             expecting_hint = False
-    return app_name, hints, desktop_entry
+        elif token_type == "variant_byte" and expecting_hint and hint_key == "urgency":
+            # Solo 0=low, 1=normal, 2=critical son válidos; fuera de rango
+            # se ignora y el nivel queda sin capturar (comportamiento actual).
+            if value in (0, 1, 2):
+                urgency = value
+            expecting_hint = False
+    summary = top_strings[2] if len(top_strings) > 2 else None
+    body = top_strings[3] if len(top_strings) > 3 else None
+    return app_name, hints, desktop_entry, urgency, summary, body
+
+
+def _match_rule(rule, summary, body, hints, desktop_entry, urgency):
+    """Evalúa una regla RULE-001 contra los campos extraídos del bloque.
+
+    Devuelve True si la regla matchea, False si no. Los campos ausentes
+    (None) nunca matchean; un hint arbitrario no extraído por el parser
+    tampoco (edge case "Body/summary ausentes → no matchean"). ``hints``
+    se recibe por firma pero no se usa para resolver el valor: el parser
+    solo extrae valores de desktop-entry y urgency; el resto de hints se
+    conoce por presencia, sin valor que matchear. Nunca lanza excepciones
+    con summary/body (ADR 0007: no se loguean ni persisten).
+    """
+    match = rule.get("match") if isinstance(rule, dict) else None
+    if not isinstance(match, dict):
+        return False
+    field = match.get("field")
+    op = match.get("op")
+    value = match.get("value")
+    if field == "body":
+        field_value = body
+    elif field == "summary":
+        field_value = summary
+    elif field == "urgency":
+        field_value = urgency
+    elif field == "desktop-entry":
+        field_value = desktop_entry
+    else:
+        # Hint arbitrario no extraído por el parser: sin valor que
+        # matchear, consistente con body/summary ausentes.
+        return False
+    if field_value is None:
+        return False
+    if op == "contains":
+        if not isinstance(field_value, str) or not isinstance(value, str):
+            return False
+        return value in field_value
+    if op == "regex":
+        if not isinstance(field_value, str) or not isinstance(value, str):
+            return False
+        pattern = _regex_cache.get(value)
+        if pattern is None:
+            try:
+                pattern = re.compile(value)
+            except re.error:
+                # Defensa en profundidad: config ya valida la regex.
+                return False
+            _regex_cache[value] = pattern
+        return pattern.search(field_value) is not None
+    if op == "eq":
+        return field_value == value
+    if op == "starts_with":
+        if not isinstance(field_value, str) or not isinstance(value, str):
+            return False
+        return field_value.startswith(value)
+    if op == "ends_with":
+        if not isinstance(field_value, str) or not isinstance(value, str):
+            return False
+        return field_value.endswith(value)
+    return False
 
 
 class NotifyDaemon:
@@ -248,6 +354,7 @@ class NotifyDaemon:
         initial_state = config.load_state()
         self.seen = set(initial_state.get("apps_seen", []))
         self._meta_cache = dict(initial_state.get("app_meta", {}))
+        self._last_play_at = {}
         self.lock = threading.Lock()
         self.monitor_lock = threading.Lock()
         self.stopping = False
@@ -257,6 +364,7 @@ class NotifyDaemon:
         self.monitor_started_at = None
         self._state_mtime = 0.0
         self._sync_seen_with_state()
+        self._ensure_own_app_registered()
 
     def _sync_seen_with_state(self):
         """Reconcile the in-memory ``seen`` set with persisted state.
@@ -281,6 +389,29 @@ class NotifyDaemon:
         with self.lock:
             self.seen &= persisted
             self._meta_cache = dict(state.get("app_meta", {}))
+
+    def _ensure_own_app_registered(self):
+        """Pre-registra la app propia 'notify-sound' en state para que
+        aparezca en la GUI sin necesidad de que suene la primera
+        notificación. No incrementa seen_count ni last_seen: es un
+        registro inicial, no una notificación recibida."""
+        if "notify-sound" in self.seen:
+            return
+        self.seen.add("notify-sound")
+        try:
+            state = config.load_state()
+        except (OSError, ValueError):
+            state = {"apps_seen": [], "app_meta": {}}
+        apps_seen = list(state.get("apps_seen", []))
+        if "notify-sound" not in apps_seen:
+            apps_seen.append("notify-sound")
+        app_meta = dict(state.get("app_meta", {}))
+        if "notify-sound" not in app_meta:
+            app_meta["notify-sound"] = {}
+        try:
+            config.save_state({"apps_seen": apps_seen, "app_meta": app_meta})
+        except OSError:
+            pass
 
     def _start_monitor(self):
         with self.monitor_lock:
@@ -452,13 +583,24 @@ class NotifyDaemon:
                 self._schedule_monitor_restart()
 
     def _handle_block(self, lines):
-        app_name, hints, desktop_entry = _parse_block(lines)
+        # summary/body se extraen en memoria (ADR 0007) y se pasan a
+        # _maybe_play para el matching por contenido (RULE-001); nunca
+        # se persisten ni se loguean.
+        app_name, hints, desktop_entry, urgency, summary, body = _parse_block(lines)
         if "x-shell-sender" in hints:
             return
         cfg = config.load_config()
         canonical = None
         comm = None
-        if (
+        if "x-notify-sound-done" in hints:
+            # Notificación propia (subcomando `notify-sound done`): se
+            # identifica por el hint propio x-notify-sound-done, no por el
+            # app_name (que es el genérico 'notify-send' para que
+            # gnome-shell muestre el banner). No se resuelve comm: es
+            # nuestra propia notificación y el comm del proceso (p. ej.
+            # python3) no debe enmascararla.
+            canonical = "notify-sound"
+        elif (
             desktop_entry
             and isinstance(desktop_entry, str)
             and 0 < len(desktop_entry) <= config.MAX_APP_NAME_LENGTH
@@ -481,8 +623,16 @@ class NotifyDaemon:
                 canonical = app_name
         if not canonical:
             return
-        self._record_app(canonical, comm)
-        self._maybe_play(canonical, hints, cfg)
+        self._record_app(canonical, comm, hints)
+        self._maybe_play(
+            canonical,
+            hints,
+            cfg,
+            urgency,
+            summary=summary,
+            body=body,
+            desktop_entry=desktop_entry,
+        )
 
     @staticmethod
     def _find_synonym_owner(cfg, app_name):
@@ -496,7 +646,7 @@ class NotifyDaemon:
                 return owner
         return None
 
-    def _record_app(self, app_name, comm=None):
+    def _record_app(self, app_name, comm=None, hints=None):
         if not app_name:
             return
         self._sync_seen_with_state()
@@ -511,6 +661,12 @@ class NotifyDaemon:
             cached["last_seen"] = time.time()
             if comm:
                 cached["comm"] = comm
+            # OWN-001: flag no-sticky de sonido propio. Se actualiza en cada
+            # notificación: si la app deja de mandar sound-name/sound-file,
+            # el flag vuelve a false en la siguiente notificación.
+            cached["has_own_sound"] = bool(
+                hints and ("sound-file" in hints or "sound-name" in hints)
+            )
             self._meta_cache[app_name] = cached
             state = config.load_state()
             apps_seen = list(state.get("apps_seen", []))
@@ -522,7 +678,22 @@ class NotifyDaemon:
                 {"apps_seen": apps_seen, "app_meta": app_meta}
             )
 
-    def _maybe_play(self, app_name, hints, cfg=None):
+    def _maybe_play(
+        self,
+        app_name,
+        hints,
+        cfg=None,
+        urgency=None,
+        summary=None,
+        body=None,
+        desktop_entry=None,
+    ):
+        # ``urgency`` (0=low, 1=normal, 2=critical) llega ya capturado por
+        # el parser. Orden de playback: suppress-sound → per-app disabled
+        # → descarte de sonido propio sin config (OWN-001) → debounce →
+        # reglas por contenido (RULE-001) → sonido del app/global.
+        # summary/body/desktop_entry viven solo durante esta llamada y se
+        # descartan al retornar (ADR 0007).
         if "suppress-sound" in hints:
             return
         if cfg is None:
@@ -537,13 +708,53 @@ class NotifyDaemon:
             app_cfg = {}
         if app_cfg.get("enabled") is False:
             return
-        if ("sound-file" in hints or "sound-name" in hints) and cfg.get(
-            "no_duplicate", True
-        ):
-            return
+        if "sound-file" in hints or "sound-name" in hints:
+            # OWN-001: si la app trae sonido propio y el usuario no la
+            # configuró (no está en config.apps), no reproducir por
+            # defecto (evita duplicar). Si el usuario activó el switch en
+            # la GUI, la app tiene entrada en config.apps y se respeta su
+            # elección (enabled).
+            if app_name not in apps:
+                return
+        # Debounce anti-ráfaga (DEB-001): dentro de la ventana configurada
+        # solo suena una vez por app. El timestamp se actualiza solo al
+        # reproducir; las notificaciones descartadas no lo mueven y las
+        # suprimidas por reglas anteriores ya retornaron antes de llegar
+        # aquí. Ventana 0 desactiva el descarte (todas suenan).
+        debounce_window = cfg.get("debounce_window", 2.0)
+        if debounce_window > 0:
+            now = time.monotonic()
+            if now - self._last_play_at.get(app_name, 0.0) < debounce_window:
+                return
+        # Volumen por app (0-100): se aplica tanto al sonido propio de la
+        # app como al global y al de las reglas. Ausente o None -> 100
+        # (comportamiento actual); config ya normaliza valores inválidos
+        # a 100.
+        volume = app_cfg.get("volume")
+        if volume is None:
+            volume = 100
+        # Reglas por contenido (RULE-001): evaluar las reglas de la app en
+        # orden. Primera que matchea gana: "sound" → reproducir y return;
+        # "silence" → return. Sin match → sonido del app/global. Las
+        # reglas no sobreescriben suppress-sound ni el descarte de sonido
+        # propio sin config (OWN-001) — ya retornaron.
+        rules = app_cfg.get("rules")
+        if rules:
+            for rule in rules:
+                if _match_rule(rule, summary, body, hints, desktop_entry, urgency):
+                    action = rule.get("action")
+                    if action == "sound":
+                        sound = rule.get("sound")
+                        if sound:
+                            self._last_play_at[app_name] = time.monotonic()
+                            player.play_choice(sound, volume=volume)
+                    return
+        # La app propia "notify-sound" sigue el flujo normal: sonido
+        # per-app (configurable en la GUI) o, si no tiene, el global.
         choice = app_cfg.get("sound") or cfg.get("sound")
         if choice:
-            player.play_choice(choice)
+            self._last_play_at[app_name] = time.monotonic()
+            player.play_choice(choice, volume=volume)
 
     def on_signal(self, signum, frame):
         self.stop()

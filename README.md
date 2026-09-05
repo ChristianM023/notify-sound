@@ -119,7 +119,7 @@ dbus-monitor (eavesdrop=true)
 parser  ──►  app name resolution (desktop-entry → comm → synonym → app_name)
         │
         ▼
-play rules  ──►  enabled? → suppress-sound? → per-app? → no_duplicate? → play
+play rules  ──►  enabled? → suppress-sound? → per-app? → own sound (no config)? → play
         │
         ▼
 player  ──►  canberra-gtk-play (OGG/WAV/FLAC) → fallback (gst → ffplay → mpv → mpg123)
@@ -164,7 +164,9 @@ notify-sound --quit     # stop the daemon
 - Global sound picker (theme sounds from the active sound theme) + **Test** button
 - Add any number of **custom sound files**; they appear in the global and
   per-app sound pickers (the list is capped to 3 visible rows with scroll)
-- "No duplicate" mode: keep the app's own sound when it sends one
+- Apps that send their own sound are detected and marked with a "Tiene sonido
+  propio" label; their per-app switch is off by default (enable it to hear
+  both sounds on purpose)
 - Per-app enable/disable, per-app sound selection and per-app **Test** button
 - **App aliasing**: rename detected apps to a friendly display name
   ("AIMP" instead of the lowercase process id) via the "Renombrar" button
@@ -201,7 +203,6 @@ Stored in `~/.config/notify-sound/config.json`:
   "enabled": true,
   "sound": "message",
   "custom_sounds": ["/path/to/my-sound.mp3"],
-  "no_duplicate": true,
   "autostart": true,
   "apps": {
     "warp": { "enabled": true, "sound": null },
@@ -275,8 +276,9 @@ your user can read them. The instance lock file
   decodes OGG/WAV/FLAC. For other formats NotifySound falls back to
   `gst-launch-1.0` (GStreamer), then `ffplay`, `mpv` or `mpg123` — install at
   least one of them, e.g. `sudo apt install gstreamer1.0-plugins-base gstreamer1.0-plugins-good`.
-- **Notifications with their own sound are played twice:** enable
-  "no_duplicate" in the GUI (disabled means both sounds play on purpose).
+- **Notifications with their own sound are played twice:** the per-app
+  switch for that app is enabled (you chose to hear both sounds). Disable it
+  in the GUI to keep only the app's own sound.
   If an app sends `suppress-sound`, NotifySound is silent by design.
 - **A notification arrives but plays no sound:** if the app sends
   `suppress-sound` this is intentional (the app plays its own sound). If not,
@@ -371,8 +373,10 @@ asserts on what would be played/skipped. Add a test for every new behavior.
   state machine, so neither the key nor the value can fake framing.
 - Playback rules, in order: master `enabled` off → nothing; `suppress-sound`
   hint → always nothing; per-app disabled → nothing; `sound-file`/`sound-name`
-  hint with `no_duplicate` → nothing; otherwise play the app's choice or the
-  global choice (a theme id or a custom file path).
+  hint with no per-app config (the app is not in `config.apps`) → nothing
+  (OWN-001: the app plays its own sound and the user did not choose to
+  duplicate it); otherwise play the app's choice or the global choice (a
+  theme id or a custom file path).
 
 ### Daemon lifecycle
 

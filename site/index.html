@@ -66,7 +66,7 @@
     <h2><span>01</span><span>The problem</span></h2>
     <div class="problem-box">
       <p>On GNOME, a notification only makes a sound when the app that sent it explicitly includes a <strong>sound-name</strong> or <strong>sound-file</strong> hint. Most apps never do — Warp, terminals, IDE builds, cron-like tools — so their notifications stay <strong>completely silent</strong>.</p>
-      <p>Apps that do play their own sound (Telegram, WhatsApp PWAs, etc.) are left untouched by default. Disable &quot;no duplicate&quot; if you intentionally want both sounds.</p>
+      <p>Apps that do play their own sound (Telegram, WhatsApp PWAs, etc.) are left untouched by default: they are marked with a &quot;Tiene sonido propio&quot; label and their per-app switch is off. Enable the per-app switch if you intentionally want both sounds.</p>
     </div>
   </div>
 </section>
@@ -86,10 +86,10 @@
     <h2><span>03</span><span>Screenshots</span></h2>
     <div class="screenshots">
       <figure class="screenshot">
-        <img src="screenshots/gui-1.png" alt="NotifySound settings window" loading="lazy" onclick="openLightbox(this.src)">
+        <img src="screenshots/gui-1.png" alt="NotifySound main window: per-app sounds, volumes and switches" loading="lazy" onclick="openLightbox(this.src)">
       </figure>
       <figure class="screenshot">
-        <img src="screenshots/gui-2.png" alt="NotifySound app management" loading="lazy" onclick="openLightbox(this.src)">
+        <img src="screenshots/gui-2.png" alt="Per-app content rules in NotifySound (real example with three rules)" loading="lazy" onclick="openLightbox(this.src)">
       </figure>
     </div>
   </div>
@@ -126,6 +126,18 @@
         <p>Enable/disable each app and give it its own sound. Apps are detected automatically and grouped by process (so AIMP shows as one entry, not one per song).</p>
       </div>
       <div class="feature">
+        <h3>Per-app volume</h3>
+        <p>Set a different volume (0-100 %) for each application, so loud apps can be tamed and quiet ones amplified.</p>
+      </div>
+      <div class="feature">
+        <h3>Content rules</h3>
+        <p>Play or silence specific notifications by body, title or urgency level (low, normal, critical).</p>
+      </div>
+      <div class="feature">
+        <h3>Anti-burst</h3>
+        <p>Repeated notifications from the same app within a configurable time window only play once.</p>
+      </div>
+      <div class="feature">
         <h3>App aliasing and fusion</h3>
         <p>Rename detected apps to a friendly name (&quot;AIMP&quot; instead of a process id). Merge duplicates by renaming them to the same alias; undo from the info popover.</p>
       </div>
@@ -134,8 +146,16 @@
         <p>Add your own OGG/WAV/FLAC (and MP3/M4A/AAC with GStreamer, ffplay, mpv or mpg123).</p>
       </div>
       <div class="feature">
+        <h3>Notify when a command finishes</h3>
+        <p><code>notify-sound done</code> sends a completion notification when a long command finishes — and plays its sound even if the daemon is not running.</p>
+      </div>
+      <div class="feature">
         <h3>Simple GTK4 settings app</h3>
         <p>Choose sounds, test them, manage apps and daemon state from one window.</p>
+      </div>
+      <div class="feature">
+        <h3>Bilingual GUI (EN/ES)</h3>
+        <p>The settings app is available in English and Spanish, with an in-app language selector.</p>
       </div>
       <div class="feature">
         <h3>Per-user install</h3>
@@ -156,7 +176,7 @@
       <tbody>
         <tr><td>Type</td><td>Standalone daemon + GTK4 GUI</td><td>GNOME Shell extension</td></tr>
         <tr><td>Scope</td><td>GNOME, GTK and freedesktop paths</td><td>GNOME Shell notifications</td></tr>
-        <tr><td>Per-app control</td><td>Enable/disable per app, per-app sounds, aliasing</td><td>Sound for all notifications</td></tr>
+        <tr><td>Per-app control</td><td>Enable/disable per app, per-app sounds, per-app volume, content rules, aliasing</td><td>Sound for all notifications</td></tr>
         <tr><td>Custom sounds</td><td>OGG/WAV/FLAC/MP3/M4A/AAC</td><td>System sound theme</td></tr>
         <tr><td>Settings</td><td>GTK4 window</td><td>GNOME Extensions preferences</td></tr>
         <tr><td>Install</td><td>.deb or per-user script</td><td>One click on extensions.gnome.org</td></tr>
@@ -185,9 +205,12 @@ sudo apt-get -f install</code></pre>
 cd notify-sound
 ./install.sh</code></pre>
     <p>Usage:</p>
-    <pre><code>notify-sound            # open the settings GUI
-notify-sound --daemon   # start the daemon
-notify-sound --quit     # stop the daemon</code></pre>
+    <pre><code>notify-sound               # open the settings GUI
+notify-sound --daemon      # start the daemon
+notify-sound --quit        # stop the daemon
+notify-sound done [message] # notify when a long command finishes</code></pre>
+    <p>Tip: append <code>notify-sound done</code> after a long command to get a notification when it finishes — it plays even if the daemon is not running:</p>
+    <pre><code>./long-build.sh; notify-sound done</code></pre>
     <p>Other distributions: see the <a href="https://github.com/ChristianM023/notify-sound" target="_blank" rel="noopener">README</a> for requirements and alternatives.</p>
   </div>
 </section>
@@ -199,6 +222,8 @@ notify-sound --quit     # stop the daemon</code></pre>
     <pre><code>notify-sound --daemon
 notify-send "Test" "If you hear a sound, it works"</code></pre>
     <p>If you installed with autostart enabled (the default), the daemon is already running and the <code>notify-send</code> line alone is enough.</p>
+    <p>You can also test the command-completion notification — it plays even if the daemon is not running:</p>
+    <pre><code>notify-sound done "Done"</code></pre>
   </div>
 </section>
 
@@ -208,7 +233,7 @@ notify-send "Test" "If you hear a sound, it works"</code></pre>
     <ul>
       <li><strong>Nothing plays at all:</strong> make sure <code>canberra-gtk-play</code> is installed and the daemon is running.</li>
       <li><strong>Custom sound file (MP3, M4A...) does not play:</strong> install GStreamer or one of <code>ffplay</code>, <code>mpv</code>, <code>mpg123</code>.</li>
-      <li><strong>Notifications with their own sound are played twice:</strong> enable &quot;no_duplicate&quot; in the GUI.</li>
+      <li><strong>Notifications with their own sound are played twice:</strong> the per-app switch for that app is enabled (you chose to hear both). Disable it in the GUI to keep only the app's own sound.</li>
       <li><strong>A notification arrives but plays no sound:</strong> the app may send <code>suppress-sound</code> (intentional) — check the per-app toggle.</li>
     </ul>
     <p>See the <a href="https://github.com/ChristianM023/notify-sound#troubleshooting" target="_blank" rel="noopener">README</a> for the full troubleshooting guide.</p>

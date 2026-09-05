@@ -66,7 +66,7 @@
     <h2><span>01</span><span>El problema</span></h2>
     <div class="problem-box">
       <p>En GNOME, una notificación solo hace sonido cuando la app que la envía incluye explícitamente un hint <strong>sound-name</strong> o <strong>sound-file</strong>. La mayoría de apps nunca lo hacen — Warp, terminales, compilaciones de IDE, herramientas tipo cron — así que sus notificaciones quedan <strong>completamente mudas</strong>.</p>
-      <p>Las apps que sí reproducen su propio sonido (Telegram, PWAs de WhatsApp, etc.) no se tocan por defecto. Desactiva &quot;no repetir&quot; si quieres ambos sonidos intencionadamente.</p>
+      <p>Las apps que sí reproducen su propio sonido (Telegram, PWAs de WhatsApp, etc.) no se tocan por defecto: se marcan con la etiqueta &quot;Tiene sonido propio&quot; y su alternador por app aparece desactivado. Activa el alternador de esa app si quieres oír ambos sonidos intencionadamente.</p>
     </div>
   </div>
 </section>
@@ -86,10 +86,10 @@
     <h2><span>03</span><span>Capturas</span></h2>
     <div class="screenshots">
       <figure class="screenshot">
-        <img src="../screenshots/gui-1.png" alt="Ventana de ajustes de NotifySound" loading="lazy" onclick="openLightbox(this.src)">
+        <img src="../screenshots/gui-1.png" alt="Ventana principal de NotifySound: sonidos, volúmenes y switches por app" loading="lazy" onclick="openLightbox(this.src)">
       </figure>
       <figure class="screenshot">
-        <img src="../screenshots/gui-2.png" alt="Gestión de aplicaciones de NotifySound" loading="lazy" onclick="openLightbox(this.src)">
+        <img src="../screenshots/gui-2.png" alt="Reglas de sonido por contenido de una app en NotifySound (ejemplo real con tres reglas)" loading="lazy" onclick="openLightbox(this.src)">
       </figure>
     </div>
   </div>
@@ -126,6 +126,18 @@
         <p>Activa/desactiva cada app y dale su propio sonido. Las apps se detectan automáticamente y se agrupan por proceso (así AIMP aparece como una sola entrada, no una por canción).</p>
       </div>
       <div class="feature">
+        <h3>Volumen por app</h3>
+        <p>Ajusta un volumen distinto (0-100 %) para cada aplicación: baja las apps ruidosas y sube las silenciosas.</p>
+      </div>
+      <div class="feature">
+        <h3>Reglas por contenido</h3>
+        <p>Reproduce o silencia notificaciones concretas por cuerpo, título o nivel de urgencia (baja, normal, crítica).</p>
+      </div>
+      <div class="feature">
+        <h3>Anti-ráfaga</h3>
+        <p>Las notificaciones repetidas de la misma app dentro de una ventana de tiempo configurable solo suenan una vez.</p>
+      </div>
+      <div class="feature">
         <h3>Alias y fusión de apps</h3>
         <p>Renombra las apps detectadas a un nombre amigable (&quot;AIMP&quot; en vez de un id de proceso). Fusiona duplicados renombrándolos al mismo alias; deshazlo desde el popover de información.</p>
       </div>
@@ -134,8 +146,16 @@
         <p>Añade tus propios OGG/WAV/FLAC (y MP3/M4A/AAC con GStreamer, ffplay, mpv o mpg123).</p>
       </div>
       <div class="feature">
+        <h3>Notificar cuando termina un comando</h3>
+        <p><code>notify-sound done</code> envía una notificación de finalización cuando termina un comando largo — y reproduce su sonido aunque el daemon no esté corriendo.</p>
+      </div>
+      <div class="feature">
         <h3>App de ajustes GTK4 sencilla</h3>
         <p>Elige sonidos, pruébalos, gestiona apps y el estado del daemon desde una ventana.</p>
+      </div>
+      <div class="feature">
+        <h3>GUI bilingüe (EN/ES)</h3>
+        <p>La app de ajustes está disponible en inglés y español, con un selector de idioma integrado.</p>
       </div>
       <div class="feature">
         <h3>Instalación por usuario</h3>
@@ -156,7 +176,7 @@
       <tbody>
         <tr><td>Tipo</td><td>Daemon independiente + GUI GTK4</td><td>Extensión de GNOME Shell</td></tr>
         <tr><td>Alcance</td><td>Rutas de GNOME, GTK y freedesktop</td><td>Notificaciones de GNOME Shell</td></tr>
-        <tr><td>Control por app</td><td>Activar/desactivar por app, sonidos por app, alias</td><td>Sonido para todas las notificaciones</td></tr>
+        <tr><td>Control por app</td><td>Activar/desactivar por app, sonidos por app, volumen por app, reglas por contenido, alias</td><td>Sonido para todas las notificaciones</td></tr>
         <tr><td>Sonidos propios</td><td>OGG/WAV/FLAC/MP3/M4A/AAC</td><td>Tema de sonidos del sistema</td></tr>
         <tr><td>Ajustes</td><td>Ventana GTK4</td><td>Preferencias de GNOME Extensions</td></tr>
         <tr><td>Instalación</td><td>.deb o script por usuario</td><td>Un clic en extensions.gnome.org</td></tr>
@@ -185,9 +205,12 @@ sudo apt-get -f install</code></pre>
 cd notify-sound
 ./install.sh</code></pre>
     <p>Uso:</p>
-    <pre><code>notify-sound            # abre la GUI de ajustes
-notify-sound --daemon   # inicia el daemon
-notify-sound --quit     # detiene el daemon</code></pre>
+    <pre><code>notify-sound               # abre la GUI de ajustes
+notify-sound --daemon      # inicia el daemon
+notify-sound --quit        # detiene el daemon
+notify-sound done [mensaje] # notifica cuando termina un comando largo</code></pre>
+    <p>Consejo: añade <code>notify-sound done</code> después de un comando largo para recibir una notificación cuando termina — suena aunque el daemon no esté corriendo:</p>
+    <pre><code>./long-build.sh; notify-sound done</code></pre>
     <p>Otras distribuciones: consulta el <a href="https://github.com/ChristianM023/notify-sound" target="_blank" rel="noopener">README</a> para requisitos y alternativas.</p>
   </div>
 </section>
@@ -199,6 +222,8 @@ notify-sound --quit     # detiene el daemon</code></pre>
     <pre><code>notify-sound --daemon
 notify-send "Prueba" "Si oyes un sonido, funciona"</code></pre>
     <p>Si instalaste con el autostart activado (el valor por defecto), el daemon ya está en ejecución y la línea <code>notify-send</code> por sí sola es suficiente.</p>
+    <p>También puedes probar la notificación de finalización de comando — suena aunque el daemon no esté corriendo:</p>
+    <pre><code>notify-sound done "Listo"</code></pre>
   </div>
 </section>
 
@@ -208,7 +233,7 @@ notify-send "Prueba" "Si oyes un sonido, funciona"</code></pre>
     <ul>
       <li><strong>No suena nada:</strong> asegúrate de que <code>canberra-gtk-play</code> está instalado y el daemon está en ejecución.</li>
       <li><strong>Un archivo de sonido personalizado (MP3, M4A...) no suena:</strong> instala GStreamer o uno de <code>ffplay</code>, <code>mpv</code>, <code>mpg123</code>.</li>
-      <li><strong>Las notificaciones con sonido propio se reproducen dos veces:</strong> activa &quot;no repetir&quot; en la GUI.</li>
+      <li><strong>Las notificaciones con sonido propio se reproducen dos veces:</strong> el alternador de esa app está activado (elegiste oír ambos). Desactívalo en la GUI para conservar solo el sonido propio de la app.</li>
       <li><strong>Llega una notificación pero no reproduce sonido:</strong> la app puede enviar <code>suppress-sound</code> (intencional) — comprueba el alternador de esa app.</li>
     </ul>
     <p>Consulta el <a href="https://github.com/ChristianM023/notify-sound/blob/main/README.es.md#solución-de-problemas" target="_blank" rel="noopener">README</a> para la guía completa de solución de problemas.</p>
